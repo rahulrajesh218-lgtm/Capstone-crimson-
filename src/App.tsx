@@ -1,5 +1,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
+import type { Session } from "@supabase/supabase-js";
+import { supabase } from "./lib/supabase";
 import {
   LayoutGrid,
   MessageSquare,
@@ -23,6 +25,7 @@ import {
 type TaskStatus = "upcoming" | "in-progress" | "completed";
 type Priority = "high" | "medium" | "low";
 type Tab = "dashboard" | "chat" | "planner" | "settings";
+type Theme = "light" | "dark" | "forest" | "sunset";
 
 type ReminderItem = {
   id: number;
@@ -32,6 +35,7 @@ type ReminderItem = {
 
 type Task = {
   id: number;
+  user_id?: string;
   title: string;
   subject: string;
   dueDate: string;
@@ -110,12 +114,12 @@ const STORAGE_KEYS = {
   goals: "zentaskra_goals_v2",
   messages: "zentaskra_messages_v2",
   studyPlanFlow: "zentaskra_study_plan_flow_v2",
-  darkMode: "zentaskra_dark_mode_v1",
+  theme: "zentaskra_theme_v1",
 };
 
 const progressSteps = [0, 25, 50, 75, 100];
 
-const defaultTasks: Task[] = [];
+
 
 const defaultSessions: StudySession[] = [];
 const defaultGoals: Goal[] = [];
@@ -703,10 +707,15 @@ function StatCard({
 }
 
 export default function App() {
+    const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authMessage, setAuthMessage] = useState("");
+  const [authSubmitting, setAuthSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
-  const [tasks, setTasks] = useState<Task[]>(() =>
-    normalizeTasks(readStorage(STORAGE_KEYS.tasks, defaultTasks))
-  );
+const [tasks, setTasks] = useState<Task[]>([]);
   const [sessions, setSessions] = useState<StudySession[]>(
     () => readStorage(STORAGE_KEYS.sessions, defaultSessions)
   );
@@ -719,9 +728,9 @@ export default function App() {
   const [studyPlanFlow, setStudyPlanFlow] = useState<StudyPlanFlow>(
     () => readStorage(STORAGE_KEYS.studyPlanFlow, defaultStudyPlanFlow)
   );
-  const [darkMode, setDarkMode] = useState<boolean>(
-    () => readStorage(STORAGE_KEYS.darkMode, false)
-  );
+  const [theme, setTheme] = useState<Theme>(
+  () => readStorage(STORAGE_KEYS.theme, "light")
+);
 
   const [input, setInput] = useState("");
   const [newGoal, setNewGoal] = useState("");
@@ -730,13 +739,12 @@ export default function App() {
 
   const [showSessionModal, setShowSessionModal] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
+  const [showHowToUse, setShowHowToUse] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
   const [sessionForm, setSessionForm] = useState<SessionForm>(emptySessionForm);
   const [taskForm, setTaskForm] = useState<TaskForm>(emptyTaskForm);
 
-  useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEYS.tasks, JSON.stringify(tasks));
-  }, [tasks]);
+
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEYS.sessions, JSON.stringify(sessions));
@@ -757,9 +765,44 @@ export default function App() {
     );
   }, [studyPlanFlow]);
 
-  useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEYS.darkMode, JSON.stringify(darkMode));
-  }, [darkMode]);
+useEffect(() => {
+  window.localStorage.setItem(STORAGE_KEYS.theme, JSON.stringify(theme));
+}, [theme]);
+useEffect(() => {
+  let mounted = true;
+
+  const loadSession = async () => {
+    const { data, error } = await supabase.auth.getSession();
+
+    if (error) {
+      console.error("Error loading session:", error.message);
+    }
+
+    if (mounted) {
+      setSession(data.session ?? null);
+      setAuthLoading(false);
+    }
+  };
+
+  loadSession();
+
+  const {
+    data: { subscription },
+  } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    setSession(nextSession ?? null);
+    setAuthLoading(false);
+  });
+
+  return () => {
+    mounted = false;
+    subscription.unsubscribe();
+  };
+}, []);
+useEffect(() => {
+  if (session?.user) {
+    loadTasks();
+  }
+}, [session]);
 
   const activeTasks = useMemo(
     () => tasks.filter((task) => !task.archived),
@@ -821,17 +864,143 @@ export default function App() {
   }, [sessions, goals]);
 
   const completionStreak = useMemo(() => calculateCompletionStreak(tasks), [tasks]);
+const handleSignUp = async () => {
+  const email = authEmail.trim();
+  const password = authPassword.trim();
 
-  const updateTaskProgress = (id: number, value: number) => {
-    const snapped = snapProgress(value);
-    setTasks((prev) =>
-      prev.map((task) =>
-        task.id === id
-          ? { ...task, progress: snapped, status: getTaskStatus(snapped) }
-          : task
-      )
-    );
-  };
+  if (!email || !password) {
+    setAuthMessage("Please enter your email and password.");
+    return;
+  }
+
+  try {
+    setAuthSubmitting(true);
+    setAuthMessage("");
+
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+
+    if (error) {
+      setAuthMessage(error.message);
+      return;
+    }
+
+    if (data.session) {
+      setAuthMessage("Account created. You are now signed in.");
+    } else {
+      setAuthMessage(
+        "Account created. Check your email to confirm your account before logging in."
+      );
+    }
+  } finally {
+    setAuthSubmitting(false);
+  }
+};
+
+const handleLogin = async () => {
+  const email = authEmail.trim();
+  const password = authPassword.trim();
+
+  if (!email || !password) {
+    setAuthMessage("Please enter your email and password.");
+    return;
+  }
+
+  try {
+    setAuthSubmitting(true);
+    setAuthMessage("");
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      setAuthMessage(error.message);
+      return;
+    }
+
+    setAuthMessage("Logged in successfully.");
+  } finally {
+    setAuthSubmitting(false);
+  }
+};
+
+const handleLogout = async () => {
+  const { error } = await supabase.auth.signOut();
+
+  if (error) {
+    setAuthMessage(error.message);
+    return;
+  }
+
+  setAuthMessage("");
+  setAuthEmail("");
+  setAuthPassword("");
+  setTasks([]);
+};
+const loadTasks = async () => {
+  if (!session?.user) return;
+
+  const { data, error } = await supabase
+    .from("tasks")
+.select("*, reminders(*)")
+    .eq("user_id", session.user.id)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("Error loading tasks:", error.message);
+    return;
+  }
+
+  const mappedTasks: Task[] = (data ?? []).map((task) => {
+    const due = typeof task.due === "string" ? task.due : "";
+    const [dueDate, dueTime] = due.includes("|") ? due.split("|") : [due, "23:59"];
+
+    return {
+      id: Number(task.id),
+      user_id: task.user_id,
+      title: task.title ?? "",
+      subject: task.subject ?? "",
+      dueDate: dueDate || "",
+      dueTime: dueTime || "23:59",
+      priority: (task.priority as Priority) ?? "medium",
+      details: task.details ?? task.reminder ?? "",
+      progress: typeof task.progress === "number" ? task.progress : 0,
+      status: (task.status as TaskStatus) ?? "upcoming",
+      archived: Boolean(task.archived),
+      reminders: (task.reminders ?? []).map((r: any) => ({
+  id: Number(r.id),
+  value: r.value,
+  createdAt: new Date(r.created_at).getTime(),
+})),
+      completedAt: task.completed_at ?? undefined,
+    };
+  });
+
+  setTasks(normalizeTasks(mappedTasks));
+};
+const updateTaskProgress = async (id: number, value: number) => {
+  const snapped = snapProgress(value);
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      progress: snapped,
+      status: getTaskStatus(snapped),
+    })
+    .eq("id", id)
+    .eq("user_id", session?.user?.id ?? "");
+
+  if (error) {
+    console.error("Error updating task progress:", error.message);
+    return;
+  }
+
+  await loadTasks();
+};
 
   const addManualSession = () => {
     const subject = sessionForm.subject.trim();
@@ -876,128 +1045,160 @@ export default function App() {
     setShowTaskModal(true);
   };
 
-  const saveTask = () => {
-    const title = taskForm.title.trim();
-    const subject = taskForm.subject.trim();
-    const dueDate = taskForm.dueDate;
-    const dueTime = taskForm.dueTime || "23:59";
-    const details = taskForm.details.trim();
-    const progress = snapProgress(Number(taskForm.progress));
+  const saveTask = async () => {
+  const title = taskForm.title.trim();
+  const subject = taskForm.subject.trim();
+  const dueDate = taskForm.dueDate;
+  const dueTime = taskForm.dueTime || "23:59";
+  const details = taskForm.details.trim();
+  const progress = snapProgress(Number(taskForm.progress));
 
-    if (!title || !subject || !dueDate || !dueTime) return;
+  if (!title || !subject || !dueDate || !dueTime || !session?.user) return;
 
-    if (editingTaskId !== null) {
-      setTasks((prev) =>
-        prev.map((task) =>
-          task.id === editingTaskId
-            ? {
-                ...task,
-                title,
-                subject,
-                dueDate,
-                dueTime,
-                priority: taskForm.priority,
-                details,
-                progress,
-                status: getTaskStatus(progress),
-              }
-            : task
-        )
-      );
-    } else {
-      const newTask: Task = {
-        id: Date.now(),
+const payload = {
+  user_id: session.user.id,
+  title,
+  subject,
+  due: `${dueDate}|${dueTime}`,
+  priority: taskForm.priority,
+  progress,
+  status: getTaskStatus(progress),
+  details,
+  archived: false,
+};
+
+  if (editingTaskId !== null) {
+    const { error } = await supabase
+      .from("tasks")
+      .update({
         title,
         subject,
-        dueDate,
-        dueTime,
+        due: `${dueDate}|${dueTime}`,
         priority: taskForm.priority,
-        details,
         progress,
         status: getTaskStatus(progress),
-        archived: false,
-        reminders: [],
-      };
-      setTasks((prev) => [newTask, ...prev]);
+        details,
+      })
+      .eq("id", editingTaskId)
+      .eq("user_id", session.user.id);
+
+    if (error) {
+      console.error("Error updating task:", error.message);
+      return;
     }
+  } else {
+    const { error } = await supabase.from("tasks").insert(payload);
 
-    setTaskForm(emptyTaskForm);
-    setEditingTaskId(null);
-    setShowTaskModal(false);
-  };
-
-  const deleteTask = (id: number) => {
-    const taskToDelete = tasks.find((task) => task.id === id);
-    setTasks((prev) => prev.filter((task) => task.id !== id));
-
-    if (taskToDelete) {
-      setSessions((prev) =>
-        prev.filter(
-          (session) => session.topic.toLowerCase() !== taskToDelete.title.toLowerCase()
-        )
-      );
+    if (error) {
+      console.error("Error creating task:", error.message);
+      return;
     }
-  };
+  }
 
-  const completeTask = (id: number) => {
-    const confirmed = window.confirm("Are you sure you're done with this task?");
-    if (!confirmed) return;
+  await loadTasks();
 
-    setTasks((prev) =>
-      prev.map((task) =>
-        task.id === id
-          ? {
-              ...task,
-              progress: 100,
-              status: "completed",
-              archived: true,
-              completedAt: getLocalDateKey(),
-            }
-          : task
+  setTaskForm(emptyTaskForm);
+  setEditingTaskId(null);
+  setShowTaskModal(false);
+};
+
+const deleteTask = async (id: number) => {
+  const taskToDelete = tasks.find((task) => task.id === id);
+
+  const { error } = await supabase
+    .from("tasks")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", session?.user?.id ?? "");
+
+  if (error) {
+    console.error("Error deleting task:", error.message);
+    return;
+  }
+
+  await loadTasks();
+
+  if (taskToDelete) {
+    setSessions((prev) =>
+      prev.filter(
+        (session) => session.topic.toLowerCase() !== taskToDelete.title.toLowerCase()
       )
     );
+  }
+};
+const completeTask = async (id: number) => {
+  const confirmed = window.confirm("Are you sure you're done with this task?");
+  if (!confirmed) return;
 
-    if (selectedTaskId === id) {
-      setSelectedTaskId(0);
-      setReminderInput("");
-    }
-  };
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+  progress: 100,
+  status: "completed",
+  archived: true,
+  completed_at: getLocalDateKey(),
+})
+    .eq("id", id)
+    .eq("user_id", session?.user?.id ?? "");
 
-  const unarchiveTask = (id: number) => {
-    setTasks((prev) =>
-      prev.map((task) =>
-        task.id === id
-          ? {
-              ...task,
-              archived: false,
-              progress: task.progress >= 100 ? 75 : task.progress,
-              status: task.progress >= 100 ? "in-progress" : getTaskStatus(task.progress),
-              completedAt: undefined,
-            }
-          : task
-      )
-    );
-  };
+  if (error) {
+    console.error("Error completing task:", error.message);
+    return;
+  }
 
-  const saveReminder = () => {
-    const value = reminderInput.trim();
-    if (!selectedTask || !value) return;
+  await loadTasks();
 
-    const reminder: ReminderItem = {
-      id: Date.now(),
-      value,
-      createdAt: Date.now(),
-    };
-
-    setTasks((prev) =>
-      prev.map((task) =>
-        task.id === selectedTask.id
-          ? { ...task, reminders: [...(task.reminders ?? []), reminder] }
-          : task
-      )
-    );
+  if (selectedTaskId === id) {
+    setSelectedTaskId(0);
     setReminderInput("");
-  };
+  }
+};
+
+const unarchiveTask = async (id: number) => {
+  const task = tasks.find((task) => task.id === id);
+  if (!task) return;
+
+  const nextProgress = task.progress >= 100 ? 75 : task.progress;
+  const nextStatus =
+    task.progress >= 100 ? "in-progress" : getTaskStatus(task.progress);
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+  archived: false,
+  progress: nextProgress,
+  status: nextStatus,
+  completed_at: null,
+})
+    .eq("id", id)
+    .eq("user_id", session?.user?.id ?? "");
+
+  if (error) {
+    console.error("Error restoring task:", error.message);
+    return;
+  }
+
+  await loadTasks();
+};
+
+const saveReminder = async () => {
+  const value = reminderInput.trim();
+  if (!selectedTask || !value || !session?.user) return;
+
+  const { error } = await supabase.from("reminders").insert({
+    task_id: selectedTask.id,
+    user_id: session.user.id,
+    value,
+  });
+
+  if (error) {
+    console.error("Error saving reminder:", error.message);
+    return;
+  }
+
+  setReminderInput("");
+  await loadTasks();
+};
 
   const startStudyPlanFlow = () => {
     setActiveTab("chat");
@@ -1142,9 +1343,141 @@ export default function App() {
     setInput("");
     setActiveTab("chat");
   };
-
+const themeClasses = {
+  page: cn(
+    "min-h-screen transition-colors",
+    theme === "dark"
+      ? "zentaskra-dark bg-[#0b1020] text-zinc-100"
+      : theme === "forest"
+        ? "zentaskra-forest bg-emerald-50 text-[#1a1a1a]"
+        : theme === "sunset"
+          ? "zentaskra-sunset bg-orange-50 text-[#1a1a1a]"
+          : "bg-[#f7f7f8] text-[#1a1a1a]"
+  ),
+  tabActive:
+    theme === "forest"
+      ? "bg-emerald-700 text-white"
+      : theme === "sunset"
+        ? "bg-orange-500 text-white"
+        : "bg-[#02031c] text-white",
+  primaryButton:
+    theme === "forest"
+      ? "bg-emerald-700 text-white"
+      : theme === "sunset"
+        ? "bg-orange-500 text-white"
+        : "bg-[#02031c] text-white",
+  badge:
+    theme === "dark"
+      ? "bg-zinc-800 text-zinc-100"
+      : "bg-white text-zinc-700 border border-zinc-200",
+};
+if (authLoading) {
   return (
-    <div className={cn("min-h-screen transition-colors", darkMode ? "zentaskra-dark bg-[#0b1020] text-zinc-100" : "bg-[#f7f7f8] text-[#1a1a1a]")}>
+    <div className="min-h-screen bg-[#f7f7f8] text-[#1a1a1a] flex items-center justify-center px-6">
+      <div className="w-full max-w-md rounded-3xl border border-zinc-200 bg-white p-8 shadow-sm text-center">
+        <h1 className="text-3xl font-semibold tracking-tight">Zentaskra</h1>
+        <p className="mt-3 text-zinc-500">Loading your account...</p>
+      </div>
+    </div>
+  );
+}
+if (!session) {
+  return (
+    <div className="min-h-screen bg-[#f7f7f8] text-[#1a1a1a] flex items-center justify-center px-6 py-10">
+      <div className="w-full max-w-md rounded-3xl border border-zinc-200 bg-white p-8 shadow-sm">
+        <div className="text-center">
+          <h1 className="text-[38px] font-semibold tracking-tight">
+            Zentaskra <span className="text-xl text-zinc-500 font-medium">(beta)</span>
+          </h1>
+          <p className="mt-2 text-zinc-500">Sign in to sync your tasks across devices.</p>
+        </div>
+
+        <div className="mt-8 grid grid-cols-2 gap-3">
+          <button
+            onClick={() => {
+              setAuthMode("login");
+              setAuthMessage("");
+            }}
+            className={cn(
+              "rounded-xl px-4 py-3 text-lg font-semibold transition",
+              authMode === "login"
+                ? "bg-[#02031c] text-white"
+                : "border border-zinc-300 bg-white text-zinc-900"
+            )}
+          >
+            Log In
+          </button>
+
+          <button
+            onClick={() => {
+              setAuthMode("signup");
+              setAuthMessage("");
+            }}
+            className={cn(
+              "rounded-xl px-4 py-3 text-lg font-semibold transition",
+              authMode === "signup"
+                ? "bg-[#02031c] text-white"
+                : "border border-zinc-300 bg-white text-zinc-900"
+            )}
+          >
+            Sign Up
+          </button>
+        </div>
+
+        <div className="mt-6 space-y-4">
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-zinc-600">Email</span>
+            <input
+              type="email"
+              value={authEmail}
+              onChange={(e) => setAuthEmail(e.target.value)}
+              placeholder="you@example.com"
+              className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none"
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-zinc-600">Password</span>
+            <input
+              type="password"
+              value={authPassword}
+              onChange={(e) => setAuthPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  authMode === "login" ? handleLogin() : handleSignUp();
+                }
+              }}
+              placeholder="Enter your password"
+              className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none"
+            />
+          </label>
+
+          {authMessage ? (
+            <div className="rounded-xl bg-zinc-100 px-4 py-3 text-sm text-zinc-700">
+              {authMessage}
+            </div>
+          ) : null}
+
+          <button
+            onClick={authMode === "login" ? handleLogin : handleSignUp}
+            disabled={authSubmitting}
+            className="w-full rounded-xl bg-[#02031c] px-5 py-3 text-lg font-semibold text-white disabled:opacity-60"
+          >
+            {authSubmitting
+              ? authMode === "login"
+                ? "Logging in..."
+                : "Creating account..."
+              : authMode === "login"
+                ? "Log In"
+                : "Create Account"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+  return (
+<div className={themeClasses.page}>
       <style>{`
         .zentaskra-dark .bg-white { background-color: #111827 !important; }
         .zentaskra-dark .bg-zinc-50 { background-color: #0f172a !important; }
@@ -1172,36 +1505,53 @@ export default function App() {
             </h1>
             <p className="mt-1 text-lg text-zinc-500">Your personal study assistant</p>
           </div>
-          <div className={cn(
-            "rounded-full px-4 py-2 text-sm font-semibold",
-            darkMode ? "bg-zinc-800 text-zinc-100" : "bg-white text-zinc-700 border border-zinc-200"
-          )}>
-            {darkMode ? "Dark Mode On" : "Light Mode On"}
-          </div>
+<div className="flex items-center gap-3">
+  <button
+    onClick={() => setShowHowToUse(true)}
+    className="rounded-xl border border-zinc-300 px-4 py-2 text-sm font-semibold hover:bg-zinc-100"
+  >
+    How to Use Zentaskra
+  </button>
+
+  <div className={cn("rounded-full px-4 py-2 text-sm font-semibold", themeClasses.badge)}>
+    {session.user.email}
+  </div>
+
+  <div className={cn("rounded-full px-4 py-2 text-sm font-semibold", themeClasses.badge)}>
+    Theme: {theme.charAt(0).toUpperCase() + theme.slice(1)}
+  </div>
+
+  <button
+    onClick={handleLogout}
+    className="rounded-xl border border-zinc-300 px-4 py-2 text-sm font-semibold hover:bg-zinc-100"
+  >
+    Logout
+  </button>
+</div>
         </div>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
           <aside className="border-r border-zinc-200 pr-4">
             <nav className="space-y-3">
-              <button
-                onClick={() => setActiveTab("dashboard")}
-                className={cn(
-                  "flex w-full items-center gap-3 rounded-xl px-4 py-4 text-left text-xl font-semibold transition",
-                  activeTab === "dashboard"
-                    ? "bg-[#02031c] text-white"
-                    : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
-                )}
-              >
-                <LayoutGrid className="h-6 w-6" /> Dashboard
-              </button>
+<button
+  onClick={() => setActiveTab("dashboard")}
+  className={cn(
+    "flex w-full items-center gap-3 rounded-xl px-4 py-4 text-left text-xl font-semibold transition",
+    activeTab === "dashboard"
+      ? themeClasses.tabActive
+      : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
+  )}
+>
+  <LayoutGrid className="h-6 w-6" /> Dashboard
+</button>
 
               <button
                 onClick={() => setActiveTab("chat")}
                 className={cn(
                   "flex w-full items-center gap-3 rounded-xl px-4 py-4 text-left text-xl font-semibold transition",
                   activeTab === "chat"
-                    ? "bg-[#02031c] text-white"
-                    : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
+  ? themeClasses.tabActive
+  : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
                 )}
               >
                 <MessageSquare className="h-6 w-6" /> AI Chat
@@ -1212,8 +1562,8 @@ export default function App() {
                 className={cn(
                   "flex w-full items-center gap-3 rounded-xl px-4 py-4 text-left text-xl font-semibold transition",
                   activeTab === "planner"
-                    ? "bg-[#02031c] text-white"
-                    : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
+  ? themeClasses.tabActive
+  : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
                 )}
               >
                 <CalendarDays className="h-6 w-6" /> Study Planner
@@ -1224,8 +1574,8 @@ export default function App() {
                 className={cn(
                   "flex w-full items-center gap-3 rounded-xl px-4 py-4 text-left text-xl font-semibold transition",
                   activeTab === "settings"
-                    ? "bg-[#02031c] text-white"
-                    : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
+  ? themeClasses.tabActive
+  : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
                 )}
               >
                 <Settings className="h-6 w-6" /> Settings
@@ -1911,25 +2261,30 @@ export default function App() {
                   </div>
 
                   <div className="rounded-2xl border border-zinc-200 p-5">
-                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div className="flex flex-col gap-4">
                       <div>
-                        <h3 className="text-2xl font-semibold">Dark Mode</h3>
+                        <h3 className="text-2xl font-semibold">Theme</h3>
                         <p className="mt-1 text-zinc-500">
-                          Switch between light mode and a darker dashboard theme.
+                          Choose how Zentaskra looks.
                         </p>
                       </div>
 
-                      <button
-                        onClick={() => setDarkMode((prev) => !prev)}
-                        className={cn(
-                          "inline-flex items-center justify-center rounded-xl px-5 py-3 text-lg font-semibold transition",
-                          darkMode
-                            ? "bg-[#02031c] text-white"
-                            : "border border-zinc-300 bg-white text-zinc-900"
-                        )}
-                      >
-                        {darkMode ? "Disable Dark Mode" : "Enable Dark Mode"}
-                      </button>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {(["light", "dark", "forest", "sunset"] as Theme[]).map((themeOption) => (
+                          <button
+                            key={themeOption}
+                            onClick={() => setTheme(themeOption)}
+                            className={cn(
+                              "rounded-xl border px-5 py-3 text-left text-lg font-semibold transition",
+                              theme === themeOption
+                                ? themeClasses.tabActive
+                                : "border-zinc-300 bg-white text-zinc-900"
+                            )}
+                          >
+                            {themeOption.charAt(0).toUpperCase() + themeOption.slice(1)}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </section>
@@ -1938,7 +2293,35 @@ export default function App() {
           </main>
         </div>
       </div>
+{showHowToUse && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl">
+      <div className="mb-5 flex items-center justify-between">
+        <div>
+          <h3 className="text-3xl font-semibold">How to Use Zentaskra</h3>
+          <p className="mt-1 text-zinc-500">
+            Quick guide to using your study assistant.
+          </p>
+        </div>
+        <button
+          onClick={() => setShowHowToUse(false)}
+          className="rounded-full bg-zinc-100 p-2 text-zinc-600"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
 
+      <div className="space-y-4 text-lg text-zinc-700">
+        <p>1. Add assignments from your dashboard.</p>
+        <p>2. Set due date, due time, and priority.</p>
+        <p>3. Track progress using the slider.</p>
+        <p>4. Select a task to save reminders.</p>
+        <p>5. Use AI Chat to ask what to study.</p>
+        <p>6. Generate study plans in Study Planner.</p>
+      </div>
+    </div>
+  </div>
+)}
       {showSessionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl">
