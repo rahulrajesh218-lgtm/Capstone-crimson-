@@ -1,4 +1,3 @@
-
 import React, { useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
@@ -108,8 +107,16 @@ type StudyPlanFlow = {
   lastInstruction: string;
 };
 
+type UploadedStudyFile = {
+  name: string;
+  content: string;
+};
+
+type ChatMode = "normal" | "quiz";
+
 const STORAGE_KEYS = {
-  tasks: "zentaskra_tasks_v6",
+  guestMode: "zentaskra_guest_mode_v1",
+  tasks: "zentaskra_tasks_v7",
   sessions: "zentaskra_sessions_v2",
   goals: "zentaskra_goals_v2",
   messages: "zentaskra_messages_v2",
@@ -127,7 +134,7 @@ const defaultMessages: Message[] = [
   {
     id: 1,
     role: "assistant",
-    text: "I'm your Zentaskra study strategist. I look at your real tasks, deadlines, priorities, and progress to tell you what to do first, build study plans, and help you recover when you're overloaded.",
+    text: "I’m your Zentaskra study assistant. I can look at your real tasks, deadlines, priorities, and progress to help you decide what to do first, make study plans, and recover when your workload gets heavy.",
   },
 ];
 
@@ -139,8 +146,8 @@ const defaultStudyPlanFlow: StudyPlanFlow = {
 
 const suggestions = [
   "What assignments are due this week?",
-  "What should I study tonight?",
-  "I'm overwhelmed — help me recover",
+  "What should I work on first tonight?",
+  "I'm overwhelmed — help me make a recovery plan",
   "Make me a study plan",
 ];
 
@@ -347,6 +354,31 @@ function getDueLabel(taskOrDueDate: Task | string, dueTime?: string) {
   return `Due in ${dayDiff} days at ${timeText}`;
 }
 
+function getTaskCheckSummary(task: Task) {
+  const daysLeft = getDaysLeft(task);
+  const reminderCount = task.reminders?.length ?? 0;
+
+  if (task.progress >= 100) {
+    return "This assignment is completed.";
+  }
+
+  const parts: string[] = [];
+
+  if (daysLeft < 0) parts.push("This assignment is overdue.");
+  else if (daysLeft === 0) parts.push("This assignment is due today.");
+  else if (daysLeft === 1) parts.push("This assignment is due tomorrow.");
+  else parts.push(`This assignment is due in ${daysLeft} days.`);
+
+  if (task.progress === 0) parts.push("You have not started yet.");
+  else if (task.progress < 100) parts.push(`You are ${task.progress}% done.`);
+
+  if (reminderCount === 0) parts.push("No reminders saved yet.");
+  else if (reminderCount === 1) parts.push("You have 1 reminder saved.");
+  else parts.push(`You have ${reminderCount} reminders saved.`);
+
+  return parts.join(" ");
+}
+
 function getPriorityRank(priority: Priority) {
   return { high: 0, medium: 1, low: 2 }[priority];
 }
@@ -354,7 +386,7 @@ function getPriorityRank(priority: Priority) {
 function buildDraftFromTasks(tasks: Task[]) {
   const openTasks = [...tasks]
     .filter((task) => !task.archived)
-    .filter((task) => task.status !== "completed")
+    .filter((task) => task.progress < 100)
     .sort((a, b) => {
       if (getDaysLeft(a) !== getDaysLeft(b)) return getDaysLeft(a) - getDaysLeft(b);
       return getPriorityRank(a.priority) - getPriorityRank(b.priority);
@@ -469,7 +501,7 @@ function capitalize(value: string) {
 function getOpenTasks(tasks: Task[]) {
   return tasks
     .filter((task) => !task.archived)
-    .filter((task) => task.status !== "completed")
+    .filter((task) => task.progress < 100)
     .sort((a, b) => {
       const aScore = getSmartTaskScore(a);
       const bScore = getSmartTaskScore(b);
@@ -707,15 +739,20 @@ function StatCard({
 }
 
 export default function App() {
-    const [session, setSession] = useState<Session | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+   const [session, setSession] = useState<Session | null>(null);
+const [authLoading, setAuthLoading] = useState(true);
+const [guestMode, setGuestMode] = useState<boolean>(
+  () => readStorage(STORAGE_KEYS.guestMode, false)
+);
+const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
-const [tasks, setTasks] = useState<Task[]>([]);
+const [tasks, setTasks] = useState<Task[]>(
+  () => normalizeTasks(readStorage(STORAGE_KEYS.tasks, [] as Task[]))
+);
   const [sessions, setSessions] = useState<StudySession[]>(
     () => readStorage(STORAGE_KEYS.sessions, defaultSessions)
   );
@@ -733,9 +770,14 @@ const [tasks, setTasks] = useState<Task[]>([]);
 );
 
   const [input, setInput] = useState("");
+  const [isSending, setIsSending] = useState(false);
   const [newGoal, setNewGoal] = useState("");
   const [selectedTaskId, setSelectedTaskId] = useState<number>(0);
   const [reminderInput, setReminderInput] = useState("");
+    const [uploadedStudyFile, setUploadedStudyFile] = useState<UploadedStudyFile | null>(null);
+  const [chatMode, setChatMode] = useState<ChatMode>("normal");
+  const [quizQuestionCount, setQuizQuestionCount] = useState(5);
+
 
   const [showSessionModal, setShowSessionModal] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
@@ -743,6 +785,85 @@ const [tasks, setTasks] = useState<Task[]>([]);
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
   const [sessionForm, setSessionForm] = useState<SessionForm>(emptySessionForm);
   const [taskForm, setTaskForm] = useState<TaskForm>(emptyTaskForm);
+  const [taskFilter, setTaskFilter] = useState<
+  "default" | "priority" | "dueDate" | "progressHigh" | "progressLow"
+>("default");
+  const handleStudyFileUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const allowedTextTypes = [
+      "text/plain",
+      "text/markdown",
+      "application/json",
+    ];
+
+    const isProbablyText =
+      allowedTextTypes.includes(file.type) ||
+      file.name.endsWith(".txt") ||
+      file.name.endsWith(".md") ||
+      file.name.endsWith(".json");
+
+    if (!isProbablyText) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now(),
+          role: "assistant",
+          text: "For now, upload a text-based file like .txt or .md so I can turn it into a quiz.",
+        },
+      ]);
+      return;
+    }
+
+    try {
+      const content = await file.text();
+
+      setUploadedStudyFile({
+        name: file.name,
+        content: content.slice(0, 12000),
+      });
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now(),
+          role: "assistant",
+          text: `Uploaded "${file.name}". I can now quiz you on it. Switch quiz mode on and say something like "quiz me on this file".`,
+        },
+      ]);
+    } catch (error) {
+      console.error("File upload error:", error);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now(),
+          role: "assistant",
+          text: "Sorry, I couldn’t read that file.",
+        },
+      ]);
+    }
+
+    e.target.value = "";
+  };
+  const clearChat = () => {
+  setMessages([
+    {
+      id: Date.now(),
+      role: "assistant",
+      text: "Chat cleared. I’m ready to help you plan your work, sort priorities, build a study plan, or quiz you on uploaded notes.",
+    },
+  ]);
+
+  setStudyPlanFlow(defaultStudyPlanFlow);
+  setUploadedStudyFile(null);
+  setChatMode("normal");
+  setQuizQuestionCount(5);
+  setInput("");
+};
+
 
 
 
@@ -768,6 +889,7 @@ const [tasks, setTasks] = useState<Task[]>([]);
 useEffect(() => {
   window.localStorage.setItem(STORAGE_KEYS.theme, JSON.stringify(theme));
 }, [theme]);
+
 useEffect(() => {
   let mounted = true;
 
@@ -799,15 +921,43 @@ useEffect(() => {
   };
 }, []);
 useEffect(() => {
-  if (session?.user) {
-    loadTasks();
+  if (authLoading) return;
+
+  if (session?.user?.id) {
+    loadTasks(session.user.id);
+  } else {
+    const localTasks = readStorage(STORAGE_KEYS.tasks, [] as Task[]);
+    setTasks(normalizeTasks(localTasks));
   }
-}, [session]);
+}, [session, authLoading]);
+useEffect(() => {
+  if (!session?.user) {
+    window.localStorage.setItem(STORAGE_KEYS.tasks, JSON.stringify(tasks));
+  }
+}, [tasks, session]);
 
   const activeTasks = useMemo(
     () => tasks.filter((task) => !task.archived),
     [tasks]
   );
+  const sortedActiveTasks = useMemo(() => {
+  const filtered = [...activeTasks];
+
+  if (taskFilter === "priority") {
+    const priorityOrder = { high: 0, medium: 1, low: 2 };
+    filtered.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
+  } else if (taskFilter === "dueDate") {
+    filtered.sort(
+      (a, b) => getDueDateTime(a).getTime() - getDueDateTime(b).getTime()
+    );
+  } else if (taskFilter === "progressHigh") {
+    filtered.sort((a, b) => b.progress - a.progress);
+  } else if (taskFilter === "progressLow") {
+    filtered.sort((a, b) => a.progress - b.progress);
+  }
+
+  return filtered;
+}, [activeTasks, taskFilter]);
 
   const archivedTasks = useMemo(
     () => tasks.filter((task) => task.archived),
@@ -845,13 +995,14 @@ useEffect(() => {
   }, [activeTasks]);
 
   const stats = useMemo(() => {
-    return {
-      upcoming: activeTasks.filter((task) => task.status === "upcoming").length,
-      progress: activeTasks.filter((task) => task.status === "in-progress").length,
-      completed: activeTasks.filter((task) => task.status === "completed").length,
-    };
-  }, [activeTasks]);
-
+  return {
+    upcoming: tasks.filter((task) => !task.archived && task.progress === 0).length,
+    inProgress: tasks.filter(
+      (task) => !task.archived && task.progress > 0 && task.progress < 100
+    ).length,
+    completed: tasks.filter((task) => task.progress >= 100).length,
+  };
+}, [tasks]);
   const plannerStats = useMemo(() => {
     const weeklyHours =
       sessions.reduce((sum, session) => sum + session.duration, 0) / 60;
@@ -864,6 +1015,7 @@ useEffect(() => {
   }, [sessions, goals]);
 
   const completionStreak = useMemo(() => calculateCompletionStreak(tasks), [tasks]);
+
 const handleSignUp = async () => {
   const email = authEmail.trim();
   const password = authPassword.trim();
@@ -887,9 +1039,10 @@ const handleSignUp = async () => {
       return;
     }
 
-    if (data.session) {
-      setAuthMessage("Account created. You are now signed in.");
-    } else {
+if (data.session) {
+  setGuestMode(false);
+  setAuthMessage("Account created. You are now signed in.");
+} else {
       setAuthMessage(
         "Account created. Check your email to confirm your account before logging in."
       );
@@ -922,7 +1075,8 @@ const handleLogin = async () => {
       return;
     }
 
-    setAuthMessage("Logged in successfully.");
+    setGuestMode(false);
+setAuthMessage("Logged in successfully.");
   } finally {
     setAuthSubmitting(false);
   }
@@ -939,15 +1093,19 @@ const handleLogout = async () => {
   setAuthMessage("");
   setAuthEmail("");
   setAuthPassword("");
-  setTasks([]);
+  setGuestMode(true);
+
+  const localTasks = readStorage(STORAGE_KEYS.tasks, [] as Task[]);
+  setTasks(normalizeTasks(localTasks));
 };
-const loadTasks = async () => {
-  if (!session?.user) return;
+const loadTasks = async (userId?: string) => {
+  const resolvedUserId = userId ?? session?.user?.id;
+  if (!resolvedUserId) return;
 
   const { data, error } = await supabase
     .from("tasks")
-.select("*, reminders(*)")
-    .eq("user_id", session.user.id)
+    .select("*, reminders(*)")
+    .eq("user_id", resolvedUserId)
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -972,18 +1130,37 @@ const loadTasks = async () => {
       status: (task.status as TaskStatus) ?? "upcoming",
       archived: Boolean(task.archived),
       reminders: (task.reminders ?? []).map((r: any) => ({
-  id: Number(r.id),
-  value: r.value,
-  createdAt: new Date(r.created_at).getTime(),
-})),
+        id: Number(r.id),
+        value: r.value,
+        createdAt: new Date(r.created_at).getTime(),
+      })),
       completedAt: task.completed_at ?? undefined,
     };
   });
 
   setTasks(normalizeTasks(mappedTasks));
 };
+
+
 const updateTaskProgress = async (id: number, value: number) => {
   const snapped = snapProgress(value);
+
+  if (!session?.user) {
+    setTasks((prev) =>
+      normalizeTasks(
+        prev.map((task) =>
+          task.id === id
+            ? {
+                ...task,
+                progress: snapped,
+                status: getTaskStatus(snapped),
+              }
+            : task
+        )
+      )
+    );
+    return;
+  }
 
   const { error } = await supabase
     .from("tasks")
@@ -992,7 +1169,7 @@ const updateTaskProgress = async (id: number, value: number) => {
       status: getTaskStatus(snapped),
     })
     .eq("id", id)
-    .eq("user_id", session?.user?.id ?? "");
+    .eq("user_id", session.user.id);
 
   if (error) {
     console.error("Error updating task progress:", error.message);
@@ -1053,19 +1230,64 @@ const updateTaskProgress = async (id: number, value: number) => {
   const details = taskForm.details.trim();
   const progress = snapProgress(Number(taskForm.progress));
 
-  if (!title || !subject || !dueDate || !dueTime || !session?.user) return;
+  if (!title || !subject || !dueDate || !dueTime) return;
 
-const payload = {
-  user_id: session.user.id,
-  title,
-  subject,
-  due: `${dueDate}|${dueTime}`,
-  priority: taskForm.priority,
-  progress,
-  status: getTaskStatus(progress),
-  details,
-  archived: false,
-};
+  if (!session?.user) {
+    if (editingTaskId !== null) {
+      setTasks((prev) =>
+        normalizeTasks(
+          prev.map((task) =>
+            task.id === editingTaskId
+              ? {
+                  ...task,
+                  title,
+                  subject,
+                  dueDate,
+                  dueTime,
+                  priority: taskForm.priority,
+                  progress,
+                  status: getTaskStatus(progress),
+                  details,
+                }
+              : task
+          )
+        )
+      );
+    } else {
+      const newTask: Task = {
+        id: Date.now(),
+        title,
+        subject,
+        dueDate,
+        dueTime,
+        priority: taskForm.priority,
+        details,
+        progress,
+        status: getTaskStatus(progress),
+        archived: false,
+        reminders: [],
+      };
+
+      setTasks((prev) => normalizeTasks([newTask, ...prev]));
+    }
+
+    setTaskForm(emptyTaskForm);
+    setEditingTaskId(null);
+    setShowTaskModal(false);
+    return;
+  }
+
+  const payload = {
+    user_id: session.user.id,
+    title,
+    subject,
+    due: `${dueDate}|${dueTime}`,
+    priority: taskForm.priority,
+    progress,
+    status: getTaskStatus(progress),
+    details,
+    archived: false,
+  };
 
   if (editingTaskId !== null) {
     const { error } = await supabase
@@ -1105,11 +1327,25 @@ const payload = {
 const deleteTask = async (id: number) => {
   const taskToDelete = tasks.find((task) => task.id === id);
 
+  if (!session?.user) {
+    setTasks((prev) => prev.filter((task) => task.id !== id));
+
+    if (taskToDelete) {
+      setSessions((prev) =>
+        prev.filter(
+          (session) => session.topic.toLowerCase() !== taskToDelete.title.toLowerCase()
+        )
+      );
+    }
+
+    return;
+  }
+
   const { error } = await supabase
     .from("tasks")
     .delete()
     .eq("id", id)
-    .eq("user_id", session?.user?.id ?? "");
+    .eq("user_id", session.user.id);
 
   if (error) {
     console.error("Error deleting task:", error.message);
@@ -1130,16 +1366,41 @@ const completeTask = async (id: number) => {
   const confirmed = window.confirm("Are you sure you're done with this task?");
   if (!confirmed) return;
 
+  if (!session?.user) {
+    setTasks((prev) =>
+      normalizeTasks(
+        prev.map((task) =>
+          task.id === id
+            ? {
+                ...task,
+                progress: 100,
+                status: "completed",
+                archived: true,
+                completedAt: getLocalDateKey(),
+              }
+            : task
+        )
+      )
+    );
+
+    if (selectedTaskId === id) {
+      setSelectedTaskId(0);
+      setReminderInput("");
+    }
+
+    return;
+  }
+
   const { error } = await supabase
     .from("tasks")
     .update({
-  progress: 100,
-  status: "completed",
-  archived: true,
-  completed_at: getLocalDateKey(),
-})
+      progress: 100,
+      status: "completed",
+      archived: true,
+      completed_at: getLocalDateKey(),
+    })
     .eq("id", id)
-    .eq("user_id", session?.user?.id ?? "");
+    .eq("user_id", session.user.id);
 
   if (error) {
     console.error("Error completing task:", error.message);
@@ -1153,7 +1414,49 @@ const completeTask = async (id: number) => {
     setReminderInput("");
   }
 };
+const archiveTask = async (id: number) => {
+  if (!session?.user) {
+    setTasks((prev) =>
+      normalizeTasks(
+        prev.map((task) =>
+          task.id === id
+            ? {
+                ...task,
+                archived: true,
+              }
+            : task
+        )
+      )
+    );
 
+    if (selectedTaskId === id) {
+      setSelectedTaskId(0);
+      setReminderInput("");
+    }
+
+    return;
+  }
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      archived: true,
+    })
+    .eq("id", id)
+    .eq("user_id", session.user.id);
+
+  if (error) {
+    console.error("Error archiving task:", error.message);
+    return;
+  }
+
+  await loadTasks();
+
+  if (selectedTaskId === id) {
+    setSelectedTaskId(0);
+    setReminderInput("");
+  }
+};
 const unarchiveTask = async (id: number) => {
   const task = tasks.find((task) => task.id === id);
   if (!task) return;
@@ -1162,16 +1465,35 @@ const unarchiveTask = async (id: number) => {
   const nextStatus =
     task.progress >= 100 ? "in-progress" : getTaskStatus(task.progress);
 
+  if (!session?.user) {
+    setTasks((prev) =>
+      normalizeTasks(
+        prev.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                archived: false,
+                progress: nextProgress,
+                status: nextStatus,
+                completedAt: undefined,
+              }
+            : item
+        )
+      )
+    );
+    return;
+  }
+
   const { error } = await supabase
     .from("tasks")
     .update({
-  archived: false,
-  progress: nextProgress,
-  status: nextStatus,
-  completed_at: null,
-})
+      archived: false,
+      progress: nextProgress,
+      status: nextStatus,
+      completed_at: null,
+    })
     .eq("id", id)
-    .eq("user_id", session?.user?.id ?? "");
+    .eq("user_id", session.user.id);
 
   if (error) {
     console.error("Error restoring task:", error.message);
@@ -1183,7 +1505,29 @@ const unarchiveTask = async (id: number) => {
 
 const saveReminder = async () => {
   const value = reminderInput.trim();
-  if (!selectedTask || !value || !session?.user) return;
+  if (!selectedTask || !value) return;
+
+  if (!session?.user) {
+    const newReminder: ReminderItem = {
+      id: Date.now(),
+      value,
+      createdAt: Date.now(),
+    };
+
+    setTasks((prev) =>
+      prev.map((task) =>
+        task.id === selectedTask.id
+          ? {
+              ...task,
+              reminders: [...(task.reminders ?? []), newReminder],
+            }
+          : task
+      )
+    );
+
+    setReminderInput("");
+    return;
+  }
 
   const { error } = await supabase.from("reminders").insert({
     task_id: selectedTask.id,
@@ -1286,63 +1630,124 @@ const saveReminder = async () => {
     ]);
   };
 
-  const sendMessage = (prefill?: string) => {
-    const value = (prefill ?? input).trim();
-    if (!value) return;
+ const sendMessage = async (prefill?: string) => {
+  const value = (prefill ?? input).trim();
+  if (!value || isSending) return;
 
-    if (value.toLowerCase().includes("make me a study plan")) {
-      setMessages((prev) => [...prev, { id: Date.now(), role: "user", text: value }]);
-      const draft = buildDraftFromTasks(tasks);
+  if (value.toLowerCase().includes("make me a study plan")) {
+    setMessages((prev) => [...prev, { id: Date.now(), role: "user", text: value }]);
+    const draft = buildDraftFromTasks(tasks);
 
-      if (!draft.length) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: Date.now() + 1,
-            role: "assistant",
-            text: "I couldn’t generate a study plan because there are no active unfinished tasks right now.",
-          },
-        ]);
-        setInput("");
-        return;
-      }
-
-      setStudyPlanFlow({
-        stage: "drafted",
-        draft,
-        lastInstruction: "",
-      });
-
+    if (!draft.length) {
       setMessages((prev) => [
         ...prev,
         {
-          id: Date.now() + 2,
+          id: Date.now() + 1,
           role: "assistant",
-          text: `Here is your first draft study plan:\n${formatPlanDraft(draft)}\n\nWould you like me to adjust anything before I save it?`,
-          meta: { type: "study-plan-draft" },
+          text: "I couldn’t generate a study plan because there are no active unfinished tasks right now.",
         },
       ]);
-
-      setInput("");
-      setActiveTab("chat");
-      return;
-    }
-
-    if (studyPlanFlow.stage !== "idle") {
-      handleStudyPlanConversation(value);
       setInput("");
       return;
     }
 
-    const response = answerQuestion(value, tasks);
+    setStudyPlanFlow({
+      stage: "drafted",
+      draft,
+      lastInstruction: "",
+    });
+
     setMessages((prev) => [
       ...prev,
-      { id: Date.now(), role: "user", text: value },
-      { id: Date.now() + 1, role: "assistant", text: response },
+      {
+        id: Date.now() + 2,
+        role: "assistant",
+        text: `Here is your first draft study plan:\n${formatPlanDraft(draft)}\n\nWould you like me to adjust anything before I save it?`,
+        meta: { type: "study-plan-draft" },
+      },
     ]);
+
     setInput("");
     setActiveTab("chat");
-  };
+    return;
+  }
+
+  if (studyPlanFlow.stage !== "idle") {
+    handleStudyPlanConversation(value);
+    setInput("");
+    return;
+  }
+
+  const userMessageId = Date.now();
+
+  setMessages((prev) => [
+    ...prev,
+    { id: userMessageId, role: "user", text: value },
+  ]);
+
+  setInput("");
+  setActiveTab("chat");
+  setIsSending(true);
+
+  try {
+    const taskSummary = tasks
+      .filter((task) => !task.archived)
+      .map((task) => ({
+        title: task.title,
+        subject: task.subject,
+        dueDate: task.dueDate,
+        dueTime: task.dueTime ?? "23:59",
+        priority: task.priority,
+        progress: task.progress,
+        status: task.status,
+        details: task.details,
+      }));
+
+    const res = await fetch("/api/gemini", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    message: value,
+    tasks: taskSummary,
+    uploadedStudyFile,
+    chatMode,
+    quizQuestionCount,
+  }),
+});
+
+    const data = await res.json();
+
+    if (!res.ok) {
+  console.error("Gemini API response error:", data);
+  throw new Error(data?.error || "Failed to get response");
+}
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: Date.now() + 1,
+        role: "assistant",
+        text: data.reply || "Sorry, I couldn't generate a response right now.",
+      },
+    ]);
+  } catch (error) {
+    console.error("Gemini chat error:", error);
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: Date.now() + 1,
+        role: "assistant",
+        text: "Sorry, I couldn’t generate a response right now.",
+      },
+    ]);
+  } finally {
+    setIsSending(false);
+  }
+};
+const showAuthGate = !session && !guestMode;
 const themeClasses = {
   page: cn(
     "min-h-screen transition-colors",
@@ -1381,101 +1786,7 @@ if (authLoading) {
     </div>
   );
 }
-if (!session) {
-  return (
-    <div className="min-h-screen bg-[#f7f7f8] text-[#1a1a1a] flex items-center justify-center px-6 py-10">
-      <div className="w-full max-w-md rounded-3xl border border-zinc-200 bg-white p-8 shadow-sm">
-        <div className="text-center">
-          <h1 className="text-[38px] font-semibold tracking-tight">
-            Zentaskra <span className="text-xl text-zinc-500 font-medium">(beta)</span>
-          </h1>
-          <p className="mt-2 text-zinc-500">Sign in to sync your tasks across devices.</p>
-        </div>
 
-        <div className="mt-8 grid grid-cols-2 gap-3">
-          <button
-            onClick={() => {
-              setAuthMode("login");
-              setAuthMessage("");
-            }}
-            className={cn(
-              "rounded-xl px-4 py-3 text-lg font-semibold transition",
-              authMode === "login"
-                ? "bg-[#02031c] text-white"
-                : "border border-zinc-300 bg-white text-zinc-900"
-            )}
-          >
-            Log In
-          </button>
-
-          <button
-            onClick={() => {
-              setAuthMode("signup");
-              setAuthMessage("");
-            }}
-            className={cn(
-              "rounded-xl px-4 py-3 text-lg font-semibold transition",
-              authMode === "signup"
-                ? "bg-[#02031c] text-white"
-                : "border border-zinc-300 bg-white text-zinc-900"
-            )}
-          >
-            Sign Up
-          </button>
-        </div>
-
-        <div className="mt-6 space-y-4">
-          <label className="block">
-            <span className="mb-2 block text-sm font-medium text-zinc-600">Email</span>
-            <input
-              type="email"
-              value={authEmail}
-              onChange={(e) => setAuthEmail(e.target.value)}
-              placeholder="you@example.com"
-              className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none"
-            />
-          </label>
-
-          <label className="block">
-            <span className="mb-2 block text-sm font-medium text-zinc-600">Password</span>
-            <input
-              type="password"
-              value={authPassword}
-              onChange={(e) => setAuthPassword(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  authMode === "login" ? handleLogin() : handleSignUp();
-                }
-              }}
-              placeholder="Enter your password"
-              className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none"
-            />
-          </label>
-
-          {authMessage ? (
-            <div className="rounded-xl bg-zinc-100 px-4 py-3 text-sm text-zinc-700">
-              {authMessage}
-            </div>
-          ) : null}
-
-          <button
-            onClick={authMode === "login" ? handleLogin : handleSignUp}
-            disabled={authSubmitting}
-            className="w-full rounded-xl bg-[#02031c] px-5 py-3 text-lg font-semibold text-white disabled:opacity-60"
-          >
-            {authSubmitting
-              ? authMode === "login"
-                ? "Logging in..."
-                : "Creating account..."
-              : authMode === "login"
-                ? "Log In"
-                : "Create Account"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
   return (
 <div className={themeClasses.page}>
       <style>{`
@@ -1500,12 +1811,19 @@ if (!session) {
       <div className="mx-auto max-w-[1400px] px-6 py-6">
         <div className="mb-6 flex items-center justify-between gap-4 border-b border-zinc-200 pb-4">
           <div>
-            <h1 className="text-[38px] font-semibold tracking-tight">
-              Zentaskra <span className="text-xl text-zinc-500 font-medium">(beta)</span>
-            </h1>
-            <p className="mt-1 text-lg text-zinc-500">Your personal study assistant</p>
-          </div>
-<div className="flex items-center gap-3">
+  <div className="flex items-center gap-3">
+    <img
+      src="/favicon.png"
+      alt="Zentaskra logo"
+      className="h-12 w-12 rounded-xl object-contain"
+    />
+    <h1 className="text-[38px] font-semibold tracking-tight">
+      Zentaskra <span className="text-xl text-zinc-500 font-medium">(beta)</span>
+    </h1>
+  </div>
+  <p className="mt-1 text-lg text-zinc-500">Your personal study assistant</p>
+</div>
+<div className="flex items-center gap-4">
   <button
     onClick={() => setShowHowToUse(true)}
     className="rounded-xl border border-zinc-300 px-4 py-2 text-sm font-semibold hover:bg-zinc-100"
@@ -1513,20 +1831,29 @@ if (!session) {
     How to Use Zentaskra
   </button>
 
-  <div className={cn("rounded-full px-4 py-2 text-sm font-semibold", themeClasses.badge)}>
-    {session.user.email}
-  </div>
+<div className={cn("rounded-full px-4 py-2 text-sm font-semibold", themeClasses.badge)}>
+  {session?.user?.email ?? "Guest Mode"}
+</div>
 
   <div className={cn("rounded-full px-4 py-2 text-sm font-semibold", themeClasses.badge)}>
     Theme: {theme.charAt(0).toUpperCase() + theme.slice(1)}
   </div>
 
+ {session ? (
   <button
     onClick={handleLogout}
     className="rounded-xl border border-zinc-300 px-4 py-2 text-sm font-semibold hover:bg-zinc-100"
   >
     Logout
   </button>
+) : (
+  <button
+    onClick={() => setGuestMode(false)}
+    className="rounded-xl border border-zinc-300 px-4 py-2 text-sm font-semibold hover:bg-zinc-100"
+  >
+    Sign In
+  </button>
+)}
 </div>
         </div>
 
@@ -1596,7 +1923,7 @@ if (!session) {
                   <StatCard
                     icon={<CircleAlert className="h-6 w-6 text-orange-500" />}
                     label="In Progress"
-                    value={stats.progress}
+                    value={stats.inProgress}
                     tint="bg-orange-100"
                   />
                   <StatCard
@@ -1628,13 +1955,37 @@ if (!session) {
                     </div>
 
                     <div className="space-y-4">
-                      {activeTasks.length === 0 ? (
+  <div className="flex items-center justify-end gap-3">
+    <span className="text-sm font-medium text-zinc-500">Sort assignments</span>
+    <select
+      value={taskFilter}
+      onChange={(e) =>
+        setTaskFilter(
+          e.target.value as
+            | "default"
+            | "priority"
+            | "dueDate"
+            | "progressHigh"
+            | "progressLow"
+        )
+      }
+      className="rounded-xl border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 outline-none"
+    >
+      <option value="default">Default</option>
+      <option value="priority">Highest Priority</option>
+      <option value="dueDate">Closest Due Date</option>
+      <option value="progressHigh">Most Progress</option>
+      <option value="progressLow">Least Progress</option>
+    </select>
+  </div>
+
+  {activeTasks.length === 0 ? (
                         <div className="rounded-[28px] border border-dashed border-zinc-200 bg-white px-8 py-14 text-center">
                           <p className="text-2xl text-zinc-500">
                             No active tasks yet. Click <span className="font-semibold text-zinc-700">Add Task</span> to create your first assignment.
                           </p>
                         </div>
-                      ) : activeTasks.map((task) => (
+                      ) : sortedActiveTasks.map((task) => (
                         <div
                           key={task.id}
                           onClick={() => setSelectedTaskId(task.id)}
@@ -1708,6 +2059,16 @@ if (!session) {
                                   Complete
                                 </button>
                                 <button
+  onClick={(e) => {
+    e.stopPropagation();
+    archiveTask(task.id);
+  }}
+  className="rounded-xl border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700"
+  title="Archive"
+>
+  Archive
+</button>
+                                <button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     deleteTask(task.id);
@@ -1727,7 +2088,7 @@ if (!session) {
                     <div className="mt-8">
                       <div className="mb-4 flex items-center gap-2">
                         <CheckCircle2 className="h-5 w-5 text-zinc-600" />
-                        <h3 className="text-2xl font-semibold">Completed Assignments</h3>
+                        <h3 className="text-2xl font-semibold">Archived Assignments</h3>
                       </div>
 
                       <div className="space-y-3">
@@ -1777,7 +2138,7 @@ if (!session) {
 
                   <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
                     <h3 className="mb-4 text-[28px] font-semibold">
-                      Assignment Reminder Check
+                      Assignment Check
                     </h3>
 
                     {selectedTask ? (
@@ -1798,6 +2159,14 @@ if (!session) {
                             </h4>
                           </div>
                           <p className="mt-1 text-zinc-500">{selectedTask.subject}</p>
+                          <div className="mt-3 rounded-xl border border-zinc-200 bg-white px-3 py-3">
+  <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+    Quick check
+  </p>
+  <p className="mt-1 text-sm text-zinc-600">
+    {getTaskCheckSummary(selectedTask)}
+  </p>
+</div>
                         </div>
 
                         <div className="rounded-2xl border border-zinc-200 p-4">
@@ -1974,26 +2343,97 @@ if (!session) {
               </div>
             )}
 
+
+
             {activeTab === "chat" && (
               <div className="flex min-h-[760px] flex-col">
                 <div className="mb-5 border-b border-zinc-200 pb-4">
-                  <div className="flex items-start gap-4">
-                    <div className="rounded-xl bg-violet-100 p-3">
-                      <Bot className="h-7 w-7 text-violet-600" />
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-4">
+                      <div className="rounded-xl bg-violet-100 p-3">
+                        <Bot className="h-7 w-7 text-violet-600" />
+                      </div>
+                      <div>
+                        <h2 className="text-[34px] font-semibold tracking-tight">
+                          AI Study Assistant
+                        </h2>
+                        <p className="text-xl text-zinc-500">
+                          Ask about assignments, deadlines, study plans, or quiz yourself with uploaded notes
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h2 className="text-[34px] font-semibold tracking-tight">
-                        AI Study Assistant
-                      </h2>
-                      <p className="text-xl text-zinc-500">
-                        Ask me anything about your studies
+
+                    <button
+                      onClick={() => {
+                        const confirmed = window.confirm("Clear the current chat?");
+                        if (confirmed) clearChat();
+                      }}
+                      className="rounded-xl border border-zinc-300 px-4 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-100"
+                    >
+                      Clear Chat
+                    </button>
+                  </div>
+
+                  <div className="mt-5 grid gap-3 md:grid-cols-4">
+                    <button
+                      onClick={() => setChatMode("normal")}
+                      className={cn(
+                        "rounded-xl px-4 py-3 text-sm font-semibold transition",
+                        chatMode === "normal"
+                          ? "bg-[#02031c] text-white"
+                          : "border border-zinc-300 bg-white text-zinc-700"
+                      )}
+                    >
+                      Normal Mode
+                    </button>
+
+                    <button
+                      onClick={() => setChatMode("quiz")}
+                      className={cn(
+                        "rounded-xl px-4 py-3 text-sm font-semibold transition",
+                        chatMode === "quiz"
+                          ? "bg-violet-600 text-white"
+                          : "border border-zinc-300 bg-white text-zinc-700"
+                      )}
+                    >
+                      Quiz Mode
+                    </button>
+
+                    <label className="flex cursor-pointer items-center justify-center rounded-xl border border-zinc-300 bg-white px-4 py-3 text-sm font-semibold text-zinc-700 hover:bg-zinc-50">
+                      Upload Notes
+                      <input
+                        type="file"
+                        accept=".txt,.md,.json,.pdf,.doc,.docx,text/plain,text/markdown,application/json,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        onChange={handleStudyFileUpload}
+                        className="hidden"
+                      />
+                    </label>
+
+                    <select
+                      value={quizQuestionCount}
+                      onChange={(e) => setQuizQuestionCount(Number(e.target.value))}
+                      className="rounded-xl border border-zinc-300 bg-white px-4 py-3 text-sm font-semibold text-zinc-700 outline-none"
+                    >
+                      <option value={3}>3 Questions</option>
+                      <option value={5}>5 Questions</option>
+                      <option value={10}>10 Questions</option>
+                    </select>
+                  </div>
+
+                  {uploadedStudyFile && (
+                    <div className="mt-4 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3">
+                      <p className="text-sm font-semibold text-violet-700">
+                        Uploaded file: {uploadedStudyFile.name}
+                      </p>
+                      <p className="mt-1 text-sm text-violet-600">
+                        Quiz mode can now use this file.
                       </p>
                     </div>
-                  </div>
+                  )}
                 </div>
 
-                <div className="space-y-4">
-                  {messages.slice(-10).map((message) => (
+                <div className="max-h-[420px] space-y-4 overflow-y-auto pr-2">
+                  {messages.map((message) => (
                     <div
                       key={message.id}
                       className={cn(
@@ -2030,7 +2470,9 @@ if (!session) {
                     {suggestions.map((suggestion) => (
                       <button
                         key={suggestion}
-                        onClick={() => sendMessage(suggestion)}
+                        onClick={() => {
+                          if (!isSending) sendMessage(suggestion);
+                        }}
                         className="rounded-xl bg-zinc-200 px-4 py-4 text-left text-xl font-medium transition hover:bg-zinc-300"
                       >
                         {suggestion}
@@ -2045,16 +2487,23 @@ if (!session) {
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter") sendMessage();
+                        if (e.key === "Enter" && !isSending) {
+                          sendMessage();
+                        }
                       }}
-                      placeholder="Ask a study question..."
+                      placeholder={
+                        chatMode === "quiz"
+                          ? 'Say "quiz me on this file"...'
+                          : "Ask what to study, what's due, or say 'Make me a study plan'..."
+                      }
                       className="flex-1 bg-transparent px-3 py-3 text-xl outline-none placeholder:text-zinc-400"
                     />
                     <button
                       onClick={() => sendMessage()}
-                      className="flex items-center gap-2 rounded-xl bg-zinc-500 px-5 py-3 text-lg font-semibold text-white"
+                      disabled={isSending}
+                      className="flex items-center gap-2 rounded-xl bg-zinc-500 px-5 py-3 text-lg font-semibold text-white disabled:opacity-60"
                     >
-                      <Send className="h-5 w-5" /> Send
+                      <Send className="h-5 w-5" /> {isSending ? "Sending..." : "Send"}
                     </button>
                   </div>
                 </div>
@@ -2281,18 +2730,143 @@ if (!session) {
                                 : "border-zinc-300 bg-white text-zinc-900"
                             )}
                           >
-                            {themeOption.charAt(0).toUpperCase() + themeOption.slice(1)}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </section>
+                   {themeOption.charAt(0).toUpperCase() + themeOption.slice(1)}
+</button>
+))}
+</div>
+</div>
+</div>
+
+<div className="rounded-2xl border border-zinc-200 p-5">
+  <h3 className="text-2xl font-semibold">Account</h3>
+  <p className="mt-1 text-zinc-500">
+    {session
+      ? "You are signed in and your tasks sync across devices."
+      : "You are using Zentaskra in guest mode. Your data is only saved on this device."}
+  </p>
+</div>
+
+</section>
               </div>
             )}
+            <footer className="mt-10 border-t border-zinc-200 pt-4 text-center text-xs text-zinc-500">
+  © 2026 Zentaskra. All rights reserved.
+</footer>
           </main>
         </div>
       </div>
+      {showAuthGate && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="w-full max-w-md rounded-3xl border border-zinc-200 bg-white p-8 shadow-2xl">
+      <div className="text-center">
+        <div className="flex items-center gap-3">
+  <img
+    src="/favicon.png"
+    alt="Zentaskra logo"
+    className="h-14 w-14 rounded-xl object-contain"
+  />
+  <h1 className="text-[38px] font-semibold tracking-tight">
+    Zentaskra <span className="text-xl text-zinc-500 font-medium">(beta)</span>
+  </h1>
+</div>
+        <p className="mt-2 text-zinc-500">
+          Sign in to sync across devices, or continue as a guest on this device.
+        </p>
+      </div>
+
+      <div className="mt-8 grid grid-cols-2 gap-3">
+        <button
+          onClick={() => {
+            setAuthMode("login");
+            setAuthMessage("");
+          }}
+          className={cn(
+            "rounded-xl px-4 py-3 text-lg font-semibold transition",
+            authMode === "login"
+              ? "bg-[#02031c] text-white"
+              : "border border-zinc-300 bg-white text-zinc-900"
+          )}
+        >
+          Log In
+        </button>
+
+        <button
+          onClick={() => {
+            setAuthMode("signup");
+            setAuthMessage("");
+          }}
+          className={cn(
+            "rounded-xl px-4 py-3 text-lg font-semibold transition",
+            authMode === "signup"
+              ? "bg-[#02031c] text-white"
+              : "border border-zinc-300 bg-white text-zinc-900"
+          )}
+        >
+          Sign Up
+        </button>
+      </div>
+
+      <div className="mt-6 space-y-4">
+        <label className="block">
+          <span className="mb-2 block text-sm font-medium text-zinc-600">Email</span>
+          <input
+            type="email"
+            value={authEmail}
+            onChange={(e) => setAuthEmail(e.target.value)}
+            placeholder="you@example.com"
+            className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none"
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-2 block text-sm font-medium text-zinc-600">Password</span>
+          <input
+            type="password"
+            value={authPassword}
+            onChange={(e) => setAuthPassword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                authMode === "login" ? handleLogin() : handleSignUp();
+              }
+            }}
+            placeholder="Enter your password"
+            className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none"
+          />
+        </label>
+
+        {authMessage ? (
+          <div className="rounded-xl bg-zinc-100 px-4 py-3 text-sm text-zinc-700">
+            {authMessage}
+          </div>
+        ) : null}
+
+        <button
+          onClick={authMode === "login" ? handleLogin : handleSignUp}
+          disabled={authSubmitting}
+          className="w-full rounded-xl bg-[#02031c] px-5 py-3 text-lg font-semibold text-white disabled:opacity-60"
+        >
+          {authSubmitting
+            ? authMode === "login"
+              ? "Logging in..."
+              : "Creating account..."
+            : authMode === "login"
+              ? "Log In"
+              : "Create Account"}
+        </button>
+
+        <button
+          onClick={() => {
+            setGuestMode(true);
+            setAuthMessage("");
+          }}
+          className="w-full rounded-xl border border-zinc-300 px-5 py-3 text-lg font-semibold text-zinc-700"
+        >
+          Continue as Guest
+        </button>
+      </div>
+    </div>
+  </div>
+)}
 {showHowToUse && (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
     <div className="w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl">
@@ -2663,4 +3237,3 @@ function calculateCompletionStreak(tasks: Task[]) {
 
   return streak;
 }
-
