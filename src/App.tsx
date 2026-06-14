@@ -19,12 +19,14 @@ import {
   X,
   Pencil,
   Flame,
+  GraduationCap,
+Calculator,
 } from "lucide-react";
 
 type TaskStatus = "upcoming" | "in-progress" | "completed";
 type Priority = "high" | "medium" | "low";
-type Tab = "dashboard" | "chat" | "planner" | "settings";
-type Theme = "light" | "dark" | "forest" | "sunset";
+type Tab = "dashboard" | "chat" | "planner" | "grades" | "settings";
+type Theme = "light" | "dark" | "forest" | "sunset" | "ocean" | "lavender" | "midnight" | "rose" | "slate";
 
 type ReminderItem = {
   id: number;
@@ -113,6 +115,33 @@ type UploadedStudyFile = {
 };
 
 type ChatMode = "normal" | "quiz";
+type GradeAssessment = {
+  id: number;
+  name: string;
+  score: number;
+  total: number;
+  factor: number;
+};
+
+type GradeCourse = {
+  id: number;
+  name: string;
+  goal: number;
+  assessments: GradeAssessment[];
+};
+
+type CourseForm = {
+  name: string;
+  goal: string;
+};
+
+type AssessmentForm = {
+  courseId: string;
+  name: string;
+  score: string;
+  total: string;
+  factor: string;
+};
 
 const STORAGE_KEYS = {
   guestMode: "zentaskra_guest_mode_v1",
@@ -122,6 +151,7 @@ const STORAGE_KEYS = {
   messages: "zentaskra_messages_v2",
   studyPlanFlow: "zentaskra_study_plan_flow_v2",
   theme: "zentaskra_theme_v1",
+  grades: "zentaskra_grades_v1",
 };
 
 const progressSteps = [0, 25, 50, 75, 100];
@@ -177,6 +207,19 @@ const emptySessionForm: SessionForm = {
   day: "Monday",
   time: "16:00",
   duration: "60",
+};
+
+const emptyCourseForm: CourseForm = {
+  name: "",
+  goal: "95",
+};
+
+const emptyAssessmentForm: AssessmentForm = {
+  courseId: "",
+  name: "",
+  score: "",
+  total: "100",
+  factor: "1",
 };
 
 function cn(...classes: Array<string | false | undefined>) {
@@ -711,20 +754,61 @@ Would you like to change anything?`;
 
 I can help you decide what to study, rank your tasks, build a recovery plan if you’re behind, or make a study plan from your deadlines.`;
 }
+function getCourseAverage(course: GradeCourse) {
+  const totalWeight = course.assessments.reduce(
+    (sum, item) => sum + Math.max(0, item.factor),
+    0
+  );
+
+  if (!course.assessments.length || totalWeight === 0) return null;
+
+  const weightedScore = course.assessments.reduce((sum, item) => {
+    const percent = item.total > 0 ? (item.score / item.total) * 100 : 0;
+    return sum + percent * Math.max(0, item.factor);
+  }, 0);
+
+  return weightedScore / totalWeight;
+}
+
+function getNeededOnNextAssessment(course: GradeCourse, nextFactor: number) {
+  const currentWeight = course.assessments.reduce(
+    (sum, item) => sum + Math.max(0, item.factor),
+    0
+  );
+
+  const currentWeightedScore = course.assessments.reduce((sum, item) => {
+    const percent = item.total > 0 ? (item.score / item.total) * 100 : 0;
+    return sum + percent * Math.max(0, item.factor);
+  }, 0);
+
+  if (nextFactor <= 0) return null;
+
+  return (
+    (course.goal * (currentWeight + nextFactor) - currentWeightedScore) /
+    nextFactor
+  );
+}
+
+function formatGradeValue(value: number | null) {
+  if (value === null || Number.isNaN(value)) return "N/A";
+  return `${value.toFixed(1)}%`;
+}
 
 function StatCard({
   icon,
   label,
   value,
   tint,
+  themeClasses,
 }: {
   icon: React.ReactNode;
   label: string;
   value: React.ReactNode;
   tint: string;
+  themeClasses: any;
 }) {
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+    <div className={cn("rounded-2xl border p-5 shadow-sm", themeClasses.card)}>
       <div className="flex items-center gap-4">
         <div className={cn("rounded-2xl p-3", tint)}>{icon}</div>
         <div>
@@ -768,6 +852,15 @@ const [tasks, setTasks] = useState<Task[]>(
   const [theme, setTheme] = useState<Theme>(
   () => readStorage(STORAGE_KEYS.theme, "light")
 );
+
+const [courses, setCourses] = useState<GradeCourse[]>(
+  () => readStorage(STORAGE_KEYS.grades, [] as GradeCourse[])
+);
+const [showCourseModal, setShowCourseModal] = useState(false);
+const [showAssessmentModal, setShowAssessmentModal] = useState(false);
+const [courseForm, setCourseForm] = useState<CourseForm>(emptyCourseForm);
+const [assessmentForm, setAssessmentForm] = useState<AssessmentForm>(emptyAssessmentForm);
+const [nextAssessmentFactor, setNextAssessmentFactor] = useState("1");
 
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -889,6 +982,10 @@ const [tasks, setTasks] = useState<Task[]>(
 useEffect(() => {
   window.localStorage.setItem(STORAGE_KEYS.theme, JSON.stringify(theme));
 }, [theme]);
+
+useEffect(() => {
+  window.localStorage.setItem(STORAGE_KEYS.grades, JSON.stringify(courses));
+}, [courses]);
 
 useEffect(() => {
   let mounted = true;
@@ -1015,6 +1112,106 @@ useEffect(() => {
   }, [sessions, goals]);
 
   const completionStreak = useMemo(() => calculateCompletionStreak(tasks), [tasks]);
+const gradeStats = useMemo(() => {
+  const averages = courses
+    .map((course) => getCourseAverage(course))
+    .filter((average): average is number => average !== null);
+
+  const overall =
+    averages.length > 0
+      ? averages.reduce((sum, value) => sum + value, 0) / averages.length
+      : null;
+
+  const atGoal = courses.filter((course) => {
+    const average = getCourseAverage(course);
+    return average !== null && average >= course.goal;
+  }).length;
+
+  return {
+    courses: courses.length,
+    assessments: courses.reduce((sum, course) => sum + course.assessments.length, 0),
+    overall,
+    atGoal,
+  };
+}, [courses]);
+
+const addCourse = () => {
+  const name = courseForm.name.trim();
+  const goal = Number(courseForm.goal);
+
+  if (!name || !goal) return;
+
+  setCourses((prev) => [
+    ...prev,
+    {
+      id: Date.now(),
+      name,
+      goal,
+      assessments: [],
+    },
+  ]);
+
+  setCourseForm(emptyCourseForm);
+  setShowCourseModal(false);
+};
+
+const deleteCourse = (id: number) => {
+  const confirmed = window.confirm("Delete this course and all its assessments?");
+  if (!confirmed) return;
+  setCourses((prev) => prev.filter((course) => course.id !== id));
+};
+
+const addAssessment = () => {
+  const courseId = Number(assessmentForm.courseId);
+  const name = assessmentForm.name.trim();
+  const score = Number(assessmentForm.score);
+  const total = Number(assessmentForm.total);
+  const factor = Number(assessmentForm.factor);
+
+  if (!courseId || !name || total <= 0 || factor <= 0 || Number.isNaN(score)) return;
+
+  const newAssessment: GradeAssessment = {
+    id: Date.now(),
+    name,
+    score,
+    total,
+    factor,
+  };
+
+  setCourses((prev) =>
+    prev.map((course) =>
+      course.id === courseId
+        ? { ...course, assessments: [newAssessment, ...course.assessments] }
+        : course
+    )
+  );
+
+  setAssessmentForm(emptyAssessmentForm);
+  setShowAssessmentModal(false);
+};
+
+const deleteAssessment = (courseId: number, assessmentId: number) => {
+  setCourses((prev) =>
+    prev.map((course) =>
+      course.id === courseId
+        ? {
+            ...course,
+            assessments: course.assessments.filter(
+              (assessment) => assessment.id !== assessmentId
+            ),
+          }
+        : course
+    )
+  );
+};
+
+const updateCourseGoal = (courseId: number, goal: number) => {
+  setCourses((prev) =>
+    prev.map((course) =>
+      course.id === courseId ? { ...course, goal } : course
+    )
+  );
+};
 
 const handleSignUp = async () => {
   const email = authEmail.trim();
@@ -1721,7 +1918,7 @@ const saveReminder = async () => {
 
     if (!res.ok) {
   console.error("Gemini API response error:", data);
-  throw new Error(data?.error || "Failed to get response");
+  throw new Error(data?.reply || data?.error || "Failed to get response");
 }
 
     setMessages((prev) => [
@@ -1740,7 +1937,7 @@ const saveReminder = async () => {
       {
         id: Date.now() + 1,
         role: "assistant",
-        text: "Sorry, I couldn’t generate a response right now.",
+        text: error instanceof Error ? error.message : "Sorry, I couldn’t generate a response right now.",
       },
     ]);
   } finally {
@@ -1749,6 +1946,24 @@ const saveReminder = async () => {
 };
 const showAuthGate = !session && !guestMode;
 const themeClasses = {
+  card:
+  theme === "dark"
+    ? "bg-zinc-900 border-zinc-700"
+    : theme === "forest"
+      ? "bg-emerald-100 border-emerald-300"
+      : theme === "sunset"
+        ? "bg-orange-100 border-orange-300"
+        : theme === "ocean"
+          ? "bg-cyan-100 border-cyan-300"
+          : theme === "lavender"
+            ? "bg-violet-100 border-violet-300"
+            : theme === "midnight"
+              ? "bg-indigo-950 border-indigo-700"
+              : theme === "rose"
+                ? "bg-rose-100 border-rose-300"
+                : theme === "slate"
+                  ? "bg-slate-200 border-slate-400"
+                  : "bg-white border-zinc-200",
   page: cn(
     "min-h-screen transition-colors",
     theme === "dark"
@@ -1757,22 +1972,55 @@ const themeClasses = {
         ? "zentaskra-forest bg-emerald-50 text-[#1a1a1a]"
         : theme === "sunset"
           ? "zentaskra-sunset bg-orange-50 text-[#1a1a1a]"
-          : "bg-[#f7f7f8] text-[#1a1a1a]"
+          : theme === "ocean"
+            ? "zentaskra-ocean bg-cyan-50 text-[#10202a]"
+            : theme === "lavender"
+              ? "zentaskra-lavender bg-violet-50 text-[#1f1633]"
+              : theme === "midnight"
+                ? "zentaskra-dark bg-[#020617] text-zinc-100"
+                : theme === "rose"
+                  ? "zentaskra-rose bg-rose-50 text-[#2a1018]"
+                  : theme === "slate"
+                    ? "zentaskra-slate bg-slate-100 text-slate-950"
+                    : "bg-[#f7f7f8] text-[#1a1a1a]"
   ),
+
   tabActive:
     theme === "forest"
       ? "bg-emerald-700 text-white"
       : theme === "sunset"
         ? "bg-orange-500 text-white"
-        : "bg-[#02031c] text-white",
+        : theme === "ocean"
+          ? "bg-cyan-700 text-white"
+          : theme === "lavender"
+            ? "bg-violet-700 text-white"
+            : theme === "midnight"
+              ? "bg-indigo-700 text-white"
+              : theme === "rose"
+                ? "bg-rose-600 text-white"
+                : theme === "slate"
+                  ? "bg-slate-700 text-white"
+                  : "bg-[#02031c] text-white",
+
   primaryButton:
     theme === "forest"
       ? "bg-emerald-700 text-white"
       : theme === "sunset"
         ? "bg-orange-500 text-white"
-        : "bg-[#02031c] text-white",
+        : theme === "ocean"
+          ? "bg-cyan-700 text-white"
+          : theme === "lavender"
+            ? "bg-violet-700 text-white"
+            : theme === "midnight"
+              ? "bg-indigo-700 text-white"
+              : theme === "rose"
+                ? "bg-rose-600 text-white"
+                : theme === "slate"
+                  ? "bg-slate-700 text-white"
+                  : "bg-[#02031c] text-white",
+
   badge:
-    theme === "dark"
+    theme === "dark" || theme === "midnight"
       ? "bg-zinc-800 text-zinc-100"
       : "bg-white text-zinc-700 border border-zinc-200",
 };
@@ -1815,7 +2063,7 @@ if (authLoading) {
     <img
       src="/favicon.png"
       alt="Zentaskra logo"
-      className="h-12 w-12 rounded-xl object-contain"
+      className="h-30 w-30 rounded-xl object-contain"
     />
     <h1 className="text-[38px] font-semibold tracking-tight">
       Zentaskra <span className="text-xl text-zinc-500 font-medium">(beta)</span>
@@ -1892,9 +2140,21 @@ if (authLoading) {
   ? themeClasses.tabActive
   : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
                 )}
+                
               >
                 <CalendarDays className="h-6 w-6" /> Study Planner
               </button>
+              <button
+  onClick={() => setActiveTab("grades")}
+  className={cn(
+    "flex w-full items-center gap-3 rounded-xl px-4 py-4 text-left text-xl font-semibold transition",
+    activeTab === "grades"
+      ? themeClasses.tabActive
+      : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
+  )}
+>
+  <GraduationCap className="h-6 w-6" /> Grades
+</button>
 
               <button
                 onClick={() => setActiveTab("settings")}
@@ -1915,33 +2175,37 @@ if (authLoading) {
               <div className="space-y-5">
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <StatCard
-                    icon={<Clock3 className="h-6 w-6 text-blue-500" />}
-                    label="Upcoming"
-                    value={stats.upcoming}
-                    tint="bg-blue-100"
-                  />
+  icon={<Clock3 className="h-6 w-6 text-blue-500" />}
+  label="Upcoming"
+  value={stats.upcoming}
+  tint="bg-blue-100"
+  themeClasses={themeClasses}
+/>
                   <StatCard
-                    icon={<CircleAlert className="h-6 w-6 text-orange-500" />}
-                    label="In Progress"
-                    value={stats.inProgress}
-                    tint="bg-orange-100"
-                  />
+  icon={<CircleAlert className="h-6 w-6 text-orange-500" />}
+  label="In Progress"
+  value={stats.inProgress}
+  tint="bg-orange-100"
+  themeClasses={themeClasses}
+/>
                   <StatCard
-                    icon={<CheckCircle2 className="h-6 w-6 text-green-500" />}
-                    label="Completed"
-                    value={stats.completed}
-                    tint="bg-green-100"
-                  />
-                  <StatCard
-                    icon={<Flame className="h-6 w-6 text-orange-500" />}
-                    label="Streak"
-                    value={`${completionStreak} day${completionStreak === 1 ? "" : "s"}`}
-                    tint="bg-orange-100"
-                  />
+  icon={<CheckCircle2 className="h-6 w-6 text-green-500" />}
+  label="Completed"
+  value={stats.completed}
+  tint="bg-green-100"
+  themeClasses={themeClasses}
+/>
+                 <StatCard
+  icon={<Flame className="h-6 w-6 text-orange-500" />}
+  label="Streak"
+  value={`${completionStreak} day${completionStreak === 1 ? "" : "s"}`}
+  tint="bg-orange-100"
+  themeClasses={themeClasses}
+/>
                 </div>
 
                 <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-                  <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+                  <section className={cn("rounded-2xl border p-5 shadow-sm", themeClasses.card)}>
                     <div className="mb-5 flex items-center justify-between gap-4">
                       <h2 className="flex items-center gap-2 text-[34px] font-semibold tracking-tight">
                         <Sparkles className="h-7 w-7" /> Your Assignments
@@ -1980,7 +2244,7 @@ if (authLoading) {
   </div>
 
   {activeTasks.length === 0 ? (
-                        <div className="rounded-[28px] border border-dashed border-zinc-200 bg-white px-8 py-14 text-center">
+                        <div className={cn("rounded-[28px] border border-dashed px-8 py-14 text-center", themeClasses.card)}>
                           <p className="text-2xl text-zinc-500">
                             No active tasks yet. Click <span className="font-semibold text-zinc-700">Add Task</span> to create your first assignment.
                           </p>
@@ -1992,8 +2256,8 @@ if (authLoading) {
                           className={cn(
                             "w-full cursor-pointer rounded-2xl border p-5 transition",
                             selectedTaskId === task.id
-                              ? "border-zinc-400 bg-zinc-50"
-                              : "border-zinc-200 bg-white hover:bg-zinc-50"
+  ? cn("border-zinc-400", themeClasses.card)
+  : cn("border-zinc-200 hover:opacity-90", themeClasses.card)
                           )}
                         >
                           <div className="flex items-start justify-between gap-4">
@@ -2096,7 +2360,7 @@ if (authLoading) {
                           archivedTasks.map((task) => (
                             <div
                               key={task.id}
-                              className="flex items-center justify-between rounded-2xl border border-zinc-200 bg-zinc-50 p-4"
+                              className={cn("flex items-center justify-between rounded-2xl border p-4", themeClasses.card)}
                             >
                               <div>
                                 <div className="flex items-center gap-2">
@@ -2136,14 +2400,14 @@ if (authLoading) {
                     </div>
                   </section>
 
-                  <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+                  <section className={cn("rounded-2xl border p-5 shadow-sm", themeClasses.card)}>
                     <h3 className="mb-4 text-[28px] font-semibold">
                       Assignment Check
                     </h3>
 
                     {selectedTask ? (
                       <div className="space-y-4">
-                        <div className="rounded-2xl bg-zinc-50 p-4">
+                        <div className={cn("rounded-2xl p-4", themeClasses.card)}>
                           <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
                             Selected task
                           </p>
@@ -2159,7 +2423,7 @@ if (authLoading) {
                             </h4>
                           </div>
                           <p className="mt-1 text-zinc-500">{selectedTask.subject}</p>
-                          <div className="mt-3 rounded-xl border border-zinc-200 bg-white px-3 py-3">
+                          <div className={cn("mt-3 rounded-xl border px-3 py-3", themeClasses.card)}>
   <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
     Quick check
   </p>
@@ -2242,7 +2506,7 @@ if (authLoading) {
                               {(selectedTask.reminders ?? []).map((reminder) => (
                                 <div
                                   key={reminder.id}
-                                  className="rounded-xl bg-zinc-50 px-3 py-2 text-sm text-zinc-700"
+                                  className={cn("rounded-xl px-3 py-2 text-sm", themeClasses.card)}
                                 >
                                   {reminder.value}
                                 </div>
@@ -2514,27 +2778,30 @@ if (authLoading) {
               <div className="space-y-5">
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <StatCard
-                    icon={<CalendarDays className="h-6 w-6 text-violet-600" />}
-                    label="Study Sessions"
-                    value={plannerStats.sessions}
-                    tint="bg-violet-100"
-                  />
+  icon={<CalendarDays className="h-6 w-6 text-violet-600" />}
+  label="Study Sessions"
+  value={plannerStats.sessions}
+  tint="bg-violet-100"
+  themeClasses={themeClasses}
+/>
                   <StatCard
-                    icon={<Clock3 className="h-6 w-6 text-blue-500" />}
-                    label="Weekly Hours"
-                    value={plannerStats.weeklyHours.toFixed(1)}
-                    tint="bg-blue-100"
-                  />
+  icon={<Clock3 className="h-6 w-6 text-blue-500" />}
+  label="Weekly Hours"
+  value={plannerStats.weeklyHours.toFixed(1)}
+  tint="bg-blue-100"
+  themeClasses={themeClasses}
+/>
                   <StatCard
-                    icon={<Target className="h-6 w-6 text-green-500" />}
-                    label="Goals Completed"
-                    value={`${plannerStats.completedGoals}/${goals.length}`}
-                    tint="bg-green-100"
-                  />
+  icon={<Target className="h-6 w-6 text-green-500" />}
+  label="Goals Completed"
+  value={`${plannerStats.completedGoals}/${goals.length}`}
+  tint="bg-green-100"
+  themeClasses={themeClasses}
+/>
                 </div>
 
                 <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_460px]">
-                  <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+                  <section className={cn("rounded-2xl border p-5 shadow-sm", themeClasses.card)}>
                     <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
                       <h2 className="text-[34px] font-semibold tracking-tight">
                         Weekly Study Schedule
@@ -2569,7 +2836,7 @@ if (authLoading) {
                               {daySessions.map((session) => (
                                 <div
                                   key={session.id}
-                                  className="flex items-center justify-between rounded-2xl bg-zinc-100 p-4"
+                                  className={cn("flex items-center justify-between rounded-2xl p-4", themeClasses.card)}
                                 >
                                   <div>
                                     <p className="text-2xl font-medium">
@@ -2610,7 +2877,7 @@ if (authLoading) {
                     </div>
                   </section>
 
-                  <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+                  <section className={cn("rounded-2xl border p-5 shadow-sm", themeClasses.card)}>
                     <div className="mb-5 flex items-center justify-between">
                       <h2 className="text-[34px] font-semibold tracking-tight">
                         Study Goals
@@ -2644,7 +2911,7 @@ if (authLoading) {
                       {goals.map((goal) => (
                         <div
                           key={goal.id}
-                          className="flex items-center justify-between gap-3 rounded-2xl bg-zinc-100 px-4 py-4"
+                          className={cn("flex items-center justify-between gap-3 rounded-2xl px-4 py-4", themeClasses.card)}
                         >
                           <button
                             onClick={() =>
@@ -2697,10 +2964,230 @@ if (authLoading) {
                 </div>
               </div>
             )}
+{activeTab === "grades" && (
+  <div className="space-y-5">
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <StatCard
+  icon={<GraduationCap className="h-6 w-6 text-blue-500" />}
+  label="Courses"
+  value={gradeStats.courses}
+  tint="bg-blue-100"
+  themeClasses={themeClasses}
+/>
+      <StatCard
+  icon={<CheckCircle2 className="h-6 w-6 text-green-500" />}
+  label="At Goal"
+  value={`${gradeStats.atGoal}/${gradeStats.courses}`}
+  tint="bg-green-100"
+  themeClasses={themeClasses}
+/>
+      <StatCard
+  icon={<Calculator className="h-6 w-6 text-violet-600" />}
+  label="Overall Avg"
+  value={formatGradeValue(gradeStats.overall)}
+  tint="bg-violet-100"
+  themeClasses={themeClasses}
+/>
+      <StatCard
+  icon={<Sparkles className="h-6 w-6 text-orange-500" />}
+  label="Assessments"
+  value={gradeStats.assessments}
+  tint="bg-orange-100"
+  themeClasses={themeClasses}
+/>
+    </div>
 
+    <section className={cn("rounded-2xl border p-5 shadow-sm", themeClasses.card)}>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="flex items-center gap-2 text-[34px] font-semibold tracking-tight">
+            <GraduationCap className="h-7 w-7" /> Grade Tracker
+          </h2>
+          <p className="mt-1 text-zinc-500">
+            Estimate course marks using factors like quiz = 2, test = 4, lab = 1.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => setShowCourseModal(true)}
+            className="flex items-center gap-2 rounded-xl bg-[#02031c] px-5 py-3 text-lg font-semibold text-white"
+          >
+            <Plus className="h-5 w-5" /> Add Course
+          </button>
+
+          <button
+            onClick={() => {
+              setAssessmentForm((prev) => ({
+                ...prev,
+                courseId: courses[0]?.id ? String(courses[0].id) : "",
+              }));
+              setShowAssessmentModal(true);
+            }}
+            disabled={courses.length === 0}
+            className="flex items-center gap-2 rounded-xl border border-zinc-300 px-5 py-3 text-lg font-semibold text-zinc-700 disabled:opacity-50"
+          >
+            <Plus className="h-5 w-5" /> Add Mark
+          </button>
+        </div>
+      </div>
+
+      {courses.length === 0 ? (
+        <div className="rounded-[28px] border border-dashed border-zinc-300 bg-white px-8 py-14 text-center">
+          <p className="text-2xl text-zinc-500">
+            No courses yet. Add a course to start tracking your estimated mark.
+          </p>
+        </div>
+      ) : (
+        <div className="grid gap-5 xl:grid-cols-2">
+          {courses.map((course) => {
+            const average = getCourseAverage(course);
+            const nextNeeded = getNeededOnNextAssessment(
+              course,
+              Number(nextAssessmentFactor)
+            );
+
+            return (
+              <div key={course.id} className="rounded-2xl border border-zinc-200 bg-zinc-50 p-5">
+                <div className="mb-4 flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="text-3xl font-semibold">{course.name}</h3>
+                    <p className="mt-1 text-zinc-500">
+                      Current estimate:{" "}
+                      <span className="font-semibold text-zinc-900">
+                        {formatGradeValue(average)}
+                      </span>
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => deleteCourse(course.id)}
+                    className="rounded-lg border border-zinc-200 bg-white p-2 text-rose-500"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="rounded-2xl border border-zinc-200 bg-white p-4">
+                    <span className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
+                      Goal
+                    </span>
+                    <div className="mt-2 flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={course.goal}
+                        onChange={(e) => updateCourseGoal(course.id, Number(e.target.value))}
+                        className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-xl font-semibold outline-none"
+                      />
+                      <span className="font-semibold">%</span>
+                    </div>
+                  </label>
+
+                  <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+                    <span className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
+                      Status
+                    </span>
+                    <p
+                      className={cn(
+                        "mt-2 text-xl font-semibold",
+                        average !== null && average >= course.goal
+                          ? "text-green-600"
+                          : "text-orange-600"
+                      )}
+                    >
+                      {average === null
+                        ? "Add marks first"
+                        : average >= course.goal
+                          ? "On track"
+                          : `${(course.goal - average).toFixed(1)}% below goal`}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-zinc-200 bg-white p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-lg font-semibold">What do I need next?</p>
+                      <p className="text-sm text-zinc-500">
+                        Uses your goal and next assessment factor.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-zinc-500">Factor</span>
+                      <input
+                        type="number"
+                        min="0.1"
+                        step="0.5"
+                        value={nextAssessmentFactor}
+                        onChange={(e) => setNextAssessmentFactor(e.target.value)}
+                        className="w-20 rounded-xl border border-zinc-200 px-3 py-2 font-semibold outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <p className="text-2xl font-semibold">
+                    {average === null
+                      ? "Add at least one mark first."
+                      : nextNeeded === null
+                        ? "Enter a valid factor."
+                        : nextNeeded > 100
+                          ? `You would need ${nextNeeded.toFixed(1)}%, so your goal may need more than one assessment.`
+                          : nextNeeded < 0
+                            ? "You are already safely above this goal."
+                            : `You need about ${nextNeeded.toFixed(1)}% on the next assessment.`}
+                  </p>
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  {course.assessments.length > 0 ? (
+                    course.assessments.map((assessment) => {
+                      const percent =
+                        assessment.total > 0
+                          ? (assessment.score / assessment.total) * 100
+                          : 0;
+
+                      return (
+                        <div
+                          key={assessment.id}
+                          className="flex items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white p-4"
+                        >
+                          <div>
+                            <p className="text-xl font-semibold">{assessment.name}</p>
+                            <p className="text-zinc-500">
+                              {assessment.score}/{assessment.total} • {percent.toFixed(1)}% • Factor {assessment.factor}
+                            </p>
+                          </div>
+
+                          <button
+                            onClick={() => deleteAssessment(course.id, assessment.id)}
+                            className="p-2 text-rose-500"
+                          >
+                            <Trash2 className="h-5 w-5" />
+                          </button>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-zinc-300 bg-white p-5 text-center text-zinc-500">
+                      No marks added yet.
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  </div>
+)}
             {activeTab === "settings" && (
               <div className="space-y-5">
-                <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+                <section className={cn("rounded-2xl border p-6 shadow-sm", themeClasses.card)}>
                   <div className="mb-6 flex items-center gap-3">
                     <Settings className="h-7 w-7" />
                     <div>
@@ -2719,7 +3206,7 @@ if (authLoading) {
                       </div>
 
                       <div className="grid gap-3 sm:grid-cols-2">
-                        {(["light", "dark", "forest", "sunset"] as Theme[]).map((themeOption) => (
+                        {(["light", "dark", "forest", "sunset", "ocean", "lavender", "midnight", "rose", "slate"] as Theme[]).map((themeOption) => (
                           <button
                             key={themeOption}
                             onClick={() => setTheme(themeOption)}
@@ -2867,14 +3354,207 @@ if (authLoading) {
     </div>
   </div>
 )}
-{showHowToUse && (
+{showCourseModal && (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
     <div className="w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl">
       <div className="mb-5 flex items-center justify-between">
         <div>
+          <h3 className="text-3xl font-semibold">Add Course</h3>
+          <p className="mt-1 text-zinc-500">
+            Create a course to track your estimated mark.
+          </p>
+        </div>
+        <button
+          onClick={() => {
+            setShowCourseModal(false);
+            setCourseForm(emptyCourseForm);
+          }}
+          className="rounded-full bg-zinc-100 p-2 text-zinc-600"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      <div className="grid gap-4">
+        <label className="space-y-2">
+          <span className="text-sm font-medium text-zinc-600">Course Name</span>
+          <input
+            value={courseForm.name}
+            onChange={(e) =>
+              setCourseForm((prev) => ({ ...prev, name: e.target.value }))
+            }
+            className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none"
+            placeholder="Science"
+          />
+        </label>
+
+        <label className="space-y-2">
+          <span className="text-sm font-medium text-zinc-600">Goal Mark (%)</span>
+          <input
+            type="number"
+            min="0"
+            max="100"
+            value={courseForm.goal}
+            onChange={(e) =>
+              setCourseForm((prev) => ({ ...prev, goal: e.target.value }))
+            }
+            className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none"
+            placeholder="95"
+          />
+        </label>
+      </div>
+
+      <div className="mt-6 flex justify-end gap-3">
+        <button
+          onClick={() => {
+            setShowCourseModal(false);
+            setCourseForm(emptyCourseForm);
+          }}
+          className="rounded-xl border border-zinc-300 px-5 py-3 font-semibold text-zinc-700"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={addCourse}
+          className="rounded-xl bg-[#02031c] px-5 py-3 font-semibold text-white"
+        >
+          Add Course
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+{showAssessmentModal && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl">
+      <div className="mb-5 flex items-center justify-between">
+        <div>
+          <h3 className="text-3xl font-semibold">Add Mark</h3>
+          <p className="mt-1 text-zinc-500">
+            Add a quiz, test, lab, assignment, or exam mark.
+          </p>
+        </div>
+        <button
+          onClick={() => {
+            setShowAssessmentModal(false);
+            setAssessmentForm(emptyAssessmentForm);
+          }}
+          className="rounded-full bg-zinc-100 p-2 text-zinc-600"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="space-y-2 md:col-span-2">
+          <span className="text-sm font-medium text-zinc-600">Course</span>
+          <select
+            value={assessmentForm.courseId}
+            onChange={(e) =>
+              setAssessmentForm((prev) => ({
+                ...prev,
+                courseId: e.target.value,
+              }))
+            }
+            className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none"
+          >
+            <option value="">Select a course</option>
+            {courses.map((course) => (
+              <option key={course.id} value={course.id}>
+                {course.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="space-y-2 md:col-span-2">
+          <span className="text-sm font-medium text-zinc-600">Assessment Name</span>
+          <input
+            value={assessmentForm.name}
+            onChange={(e) =>
+              setAssessmentForm((prev) => ({ ...prev, name: e.target.value }))
+            }
+            className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none"
+            placeholder="Unit 5 Test"
+          />
+        </label>
+
+        <label className="space-y-2">
+          <span className="text-sm font-medium text-zinc-600">Score</span>
+          <input
+            type="number"
+            value={assessmentForm.score}
+            onChange={(e) =>
+              setAssessmentForm((prev) => ({ ...prev, score: e.target.value }))
+            }
+            className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none"
+            placeholder="24"
+          />
+        </label>
+
+        <label className="space-y-2">
+          <span className="text-sm font-medium text-zinc-600">Out Of</span>
+          <input
+            type="number"
+            min="1"
+            value={assessmentForm.total}
+            onChange={(e) =>
+              setAssessmentForm((prev) => ({ ...prev, total: e.target.value }))
+            }
+            className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none"
+            placeholder="26"
+          />
+        </label>
+
+        <label className="space-y-2 md:col-span-2">
+          <span className="text-sm font-medium text-zinc-600">
+            Factor / Weight
+          </span>
+          <input
+            type="number"
+            min="0.1"
+            step="0.5"
+            value={assessmentForm.factor}
+            onChange={(e) =>
+              setAssessmentForm((prev) => ({ ...prev, factor: e.target.value }))
+            }
+            className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none"
+            placeholder="4"
+          />
+          <p className="text-sm text-zinc-500">
+            Example: quiz = 2, test = 4, lab/assignment = 1.
+          </p>
+        </label>
+      </div>
+
+      <div className="mt-6 flex justify-end gap-3">
+        <button
+          onClick={() => {
+            setShowAssessmentModal(false);
+            setAssessmentForm(emptyAssessmentForm);
+          }}
+          className="rounded-xl border border-zinc-300 px-5 py-3 font-semibold text-zinc-700"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={addAssessment}
+          className="rounded-xl bg-[#02031c] px-5 py-3 font-semibold text-white"
+        >
+          Save Mark
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+{showHowToUse && (
+  <div className="fixed inset-0 z-50 bg-black/40 p-4 overflow-y-auto">
+    <div className="mx-auto w-full max-w-4xl rounded-3xl bg-white p-6 shadow-2xl">
+      <div className="mb-5 flex items-center justify-between">
+        <div>
           <h3 className="text-3xl font-semibold">How to Use Zentaskra</h3>
           <p className="mt-1 text-zinc-500">
-            Quick guide to using your study assistant.
+            Quick visual guide to using your study assistant.
           </p>
         </div>
         <button
@@ -2885,13 +3565,50 @@ if (authLoading) {
         </button>
       </div>
 
-      <div className="space-y-4 text-lg text-zinc-700">
-        <p>1. Add assignments from your dashboard.</p>
-        <p>2. Set due date, due time, and priority.</p>
-        <p>3. Track progress using the slider.</p>
-        <p>4. Select a task to save reminders.</p>
-        <p>5. Use AI Chat to ask what to study.</p>
-        <p>6. Generate study plans in Study Planner.</p>
+      <div className="mt-6 space-y-8">
+        <section>
+          <h3 className="text-xl font-semibold">1. Add assignments</h3>
+          <p className="text-zinc-500">
+            Use the dashboard to add homework, projects, and deadlines.
+          </p>
+          <img
+            src="/how-to/dashboard.png"
+            className="mt-3 w-full rounded-xl border border-zinc-300"
+          />
+        </section>
+
+        <section>
+          <h3 className="text-xl font-semibold">2. Track your progress</h3>
+          <p className="text-zinc-500">
+            Update each task as you work on it.
+          </p>
+          <img
+            src="/how-to/progress.png"
+            className="mt-3 w-full rounded-xl border border-zinc-300"
+          />
+        </section>
+
+        <section>
+          <h3 className="text-xl font-semibold">3. Use AI Chat</h3>
+          <p className="text-zinc-500">
+            Ask Zentaskra what to study first or generate a study plan.
+          </p>
+          <img
+            src="/how-to/chat.png"
+            className="mt-3 w-full rounded-xl border border-zinc-300"
+          />
+        </section>
+
+        <section>
+          <h3 className="text-xl font-semibold">4. Use the Study Planner</h3>
+          <p className="text-zinc-500">
+            Create study sessions and organize your week.
+          </p>
+          <img
+            src="/how-to/planner.png"
+            className="mt-3 w-full rounded-xl border border-zinc-300"
+          />
+        </section>
       </div>
     </div>
   </div>

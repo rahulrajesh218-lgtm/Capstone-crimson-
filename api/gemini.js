@@ -44,6 +44,7 @@ export default async function handler(req, res) {
         "bro",
         "are u working",
         "are u fixed",
+        "do u work",
       ].includes(lowerMessage)
     ) {
       return res.status(200).json({
@@ -52,7 +53,7 @@ export default async function handler(req, res) {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     const taskListText =
       Array.isArray(tasks) && tasks.length
@@ -100,7 +101,7 @@ ${taskListText}
 `.trim();
 
     const result = await model.generateContent(prompt);
-    const reply = result.response.text();
+    const reply = await result.response.text();
 
     return res.status(200).json({
       reply: reply || "No response returned.",
@@ -108,9 +109,21 @@ ${taskListText}
   } catch (error) {
     console.error("Gemini API error:", error);
 
+    const errorMessage =
+      error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+
+    if (
+      errorMessage.includes("429") ||
+      errorMessage.includes("quota") ||
+      errorMessage.includes("too many requests")
+    ) {
+      return res.status(429).json({
+        error: "Zentaskra hit the Gemini free-tier limit for a moment. Wait about a minute and try again.",
+      });
+    }
+
     return res.status(500).json({
-      error: error?.message || "Failed to generate response.",
-      details: String(error),
+      error: error instanceof Error ? error.message : "Failed to generate response.",
     });
   }
 }

@@ -12,6 +12,7 @@
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.103.3",
+    "@vercel/analytics": "^2.0.1",
     "lucide-react": "^0.575.0",
     "openai": "^6.22.0",
     "react": "^19.2.0",
