@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { Analytics } from '@vercel/analytics/react';
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
 import {
@@ -3914,12 +3915,15 @@ if (authLoading) {
                 Save Task
               </button>
             </div>
-          </div>
+                    </div>
         </div>
       )}
+
+      <Analytics />
     </div>
   );
 }
+
 function getLocalDateKey(date = new Date()) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
