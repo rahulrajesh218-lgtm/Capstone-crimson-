@@ -981,6 +981,10 @@ const [nextAssessmentFactor, setNextAssessmentFactor] = useState("1");
   }, [studyPlanFlow]);
 
 useEffect(() => {
+  window.localStorage.setItem(STORAGE_KEYS.guestMode, JSON.stringify(guestMode));
+}, [guestMode]);
+
+useEffect(() => {
   window.localStorage.setItem(STORAGE_KEYS.theme, JSON.stringify(theme));
 }, [theme]);
 
