@@ -2332,8 +2332,19 @@ if (authLoading) {
         .zentaskra-dark input::placeholder,
         .zentaskra-dark textarea::placeholder { color: #94a3b8; }
         .zentaskra-dark .desktop-app-main { background-color: #0b1020 !important; }
+        .zentaskra-dark .desktop-app-shell,
+        .zentaskra-dark .desktop-sidebar,
+        .zentaskra-dark .desktop-surface,
+        .zentaskra-dark .desktop-summary-card { background-color: #111827 !important; }
+        .zentaskra-dark .desktop-empty-state,
+        .zentaskra-dark .desktop-task-row { background-color: #0f172a !important; }
+        .zentaskra-dark .desktop-missing-summary,
+        .zentaskra-dark .desktop-missing-row { background-color: rgba(127, 29, 29, 0.28) !important; }
+        .zentaskra-dark .desktop-missing-summary .text-zinc-950,
+        .zentaskra-dark .desktop-missing-summary .text-zinc-600 { color: #fee2e2 !important; }
+        .zentaskra-dark .desktop-app-shell { border-color: #1f2937 !important; }
       `}</style>
-      <div className="mx-auto min-h-[100dvh] max-w-[1400px] px-3 pb-[calc(5.25rem+env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6 md:py-6 md:pb-6">
+      <div className="mx-auto min-h-[100dvh] w-full px-3 pb-[calc(5.25rem+env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6 md:px-6 md:py-6 md:pb-6 2xl:px-8">
         <div className="mb-4 flex items-center justify-between gap-3 md:hidden">
           <button onClick={() => setActiveTab("dashboard")} className="flex min-h-11 min-w-0 items-center gap-2 rounded-xl text-left" aria-label="Go to Home">
             <img src="/icons/pwa-192.png" alt="" className="h-10 w-10 shrink-0 rounded-xl" />
@@ -2390,94 +2401,94 @@ if (authLoading) {
 </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-[240px_minmax(0,1fr)] md:gap-0 md:overflow-hidden md:rounded-3xl md:border md:border-zinc-200 md:bg-white md:shadow-sm">
-          <aside className="hidden min-h-[calc(100dvh-3rem)] flex-col border-r border-zinc-200 bg-white p-4 md:flex">
-            <button onClick={() => setActiveTab("dashboard")} className="mb-6 flex min-h-12 items-center gap-3 rounded-2xl px-2 text-left">
-              <img src="/icons/pwa-192.png" alt="" className="h-11 w-11 rounded-xl" />
-              <span className="text-xl font-semibold tracking-tight">Zentaskra</span>
+        <div className="desktop-app-shell grid grid-cols-1 gap-5 md:grid-cols-[280px_minmax(0,1fr)] md:gap-0 md:overflow-hidden md:rounded-[32px] md:border md:border-zinc-200 md:bg-white md:shadow-xl md:shadow-zinc-950/5 xl:grid-cols-[310px_minmax(0,1fr)]">
+          <aside className="desktop-sidebar hidden min-h-[calc(100dvh-3rem)] flex-col border-r border-zinc-200 bg-white p-6 md:flex xl:p-7">
+            <button onClick={() => setActiveTab("dashboard")} className="mb-8 flex min-h-14 items-center gap-4 rounded-2xl px-2 text-left">
+              <img src="/icons/pwa-192.png" alt="" className="h-12 w-12 rounded-xl" />
+              <span className="text-2xl font-semibold tracking-tight">Zentaskra</span>
             </button>
             <nav className="flex flex-1 flex-col space-y-1">
 <button
   onClick={() => setActiveTab("dashboard")}
   className={cn(
-    "flex min-h-12 w-full items-center gap-3 rounded-xl px-4 text-left text-sm font-semibold transition",
+    "flex min-h-14 w-full items-center gap-4 rounded-2xl px-4 text-left text-base font-semibold transition xl:text-lg",
     activeTab === "dashboard"
       ? "bg-indigo-50 text-indigo-700"
       : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950"
   )}
 >
-  <LayoutGrid className="h-5 w-5" /> Home
+  <LayoutGrid className="h-6 w-6" /> Home
 </button>
 
-              <button onClick={() => setActiveTab("tasks")} className={cn("flex min-h-12 w-full items-center gap-3 rounded-xl px-4 text-left text-sm font-semibold transition", activeTab === "tasks" ? "bg-indigo-50 text-indigo-700" : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950")}>
-                <CheckCircle2 className="h-5 w-5" /> Tasks
+              <button onClick={() => setActiveTab("tasks")} className={cn("flex min-h-14 w-full items-center gap-4 rounded-2xl px-4 text-left text-base font-semibold transition xl:text-lg", activeTab === "tasks" ? "bg-indigo-50 text-indigo-700" : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950")}>
+                <CheckCircle2 className="h-6 w-6" /> Tasks
               </button>
 
               <button
                 onClick={() => setActiveTab("schedule")}
                 className={cn(
-                    "flex min-h-12 w-full items-center gap-3 rounded-xl px-4 text-left text-sm font-semibold transition",
+                    "flex min-h-14 w-full items-center gap-4 rounded-2xl px-4 text-left text-base font-semibold transition xl:text-lg",
                     activeTab === "schedule" ? "bg-indigo-50 text-indigo-700" : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950"
                 )}
               >
-                <CalendarDays className="h-5 w-5" /> Schedule
+                <CalendarDays className="h-6 w-6" /> Schedule
               </button>
 
               <button
                 onClick={() => setActiveTab("chat")}
                 className={cn(
-                    "flex min-h-12 w-full items-center gap-3 rounded-xl px-4 text-left text-sm font-semibold transition",
+                    "flex min-h-14 w-full items-center gap-4 rounded-2xl px-4 text-left text-base font-semibold transition xl:text-lg",
                     activeTab === "chat"
   ? "bg-indigo-50 text-indigo-700"
   : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950"
                 )}
               >
-                <MessageSquare className="h-5 w-5" /> AI Chat
+                <MessageSquare className="h-6 w-6" /> AI Chat
               </button>
 
               <button
                 onClick={() => setActiveTab("planner")}
                 className={cn(
-                    "flex min-h-12 w-full items-center gap-3 rounded-xl px-4 text-left text-sm font-semibold transition",
+                    "flex min-h-14 w-full items-center gap-4 rounded-2xl px-4 text-left text-base font-semibold transition xl:text-lg",
                     activeTab === "planner"
   ? "bg-indigo-50 text-indigo-700"
   : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950"
                 )}
                 
               >
-                <CalendarDays className="h-5 w-5" /> Study Planner
+                <CalendarDays className="h-6 w-6" /> Study Planner
               </button>
               <button
   onClick={() => setActiveTab("grades")}
   className={cn(
-    "flex min-h-12 w-full items-center gap-3 rounded-xl px-4 text-left text-sm font-semibold transition",
+    "flex min-h-14 w-full items-center gap-4 rounded-2xl px-4 text-left text-base font-semibold transition xl:text-lg",
     activeTab === "grades"
       ? "bg-indigo-50 text-indigo-700"
       : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950"
   )}
 >
-  <GraduationCap className="h-5 w-5" /> Grades
+  <GraduationCap className="h-6 w-6" /> Grades
 </button>
 
               <button
                 onClick={() => setActiveTab("settings")}
                 className={cn(
-                  "mt-auto flex min-h-12 w-full items-center gap-3 rounded-xl border-t border-zinc-200 px-4 pt-4 text-left text-sm font-semibold transition",
+                  "mt-auto flex min-h-14 w-full items-center gap-4 rounded-2xl px-4 text-left text-base font-semibold transition xl:text-lg",
                   activeTab === "settings"
   ? "text-indigo-700"
   : "text-zinc-600 hover:text-zinc-950"
                 )}
               >
-                <Settings className="h-5 w-5" /> Settings
+                <Settings className="h-6 w-6" /> Settings
               </button>
             </nav>
-            <button onClick={() => session ? handleLogout() : setGuestMode(false)} className="mt-4 flex min-h-14 items-center gap-3 rounded-2xl border border-zinc-200 p-3 text-left hover:bg-zinc-50">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-700">{(session?.user?.email ?? "G").charAt(0).toUpperCase()}</span>
-              <span className="min-w-0"><span className="block truncate text-sm font-semibold">{session?.user?.email?.split("@")[0] ?? "Guest mode"}</span><span className="block truncate text-xs text-zinc-500">{session?.user?.email ?? "Sign in to sync"}</span></span>
+            <button onClick={() => session ? handleLogout() : setGuestMode(false)} className="mt-6 flex min-h-20 items-center gap-4 rounded-2xl bg-zinc-50 p-4 text-left hover:bg-zinc-100">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-base font-semibold text-indigo-700">{(session?.user?.email ?? "G").charAt(0).toUpperCase()}</span>
+              <span className="min-w-0"><span className="block truncate text-base font-semibold">{session?.user?.email?.split("@")[0] ?? "Guest mode"}</span><span className="mt-0.5 block truncate text-sm text-zinc-500">{session?.user?.email ?? "Sign in to sync"}</span></span>
             </button>
           </aside>
 
-          <main className="desktop-app-main min-w-0 md:bg-[#fafafa] md:p-6 lg:p-8">
+          <main className="desktop-app-main min-w-0 md:bg-[#fafafa] md:p-8 xl:p-10 2xl:p-12">
             {activeTab === "dashboard" && (
               <>
               <MobileDashboard
