@@ -994,17 +994,30 @@ useEffect(() => {
 
 useEffect(() => {
   let mounted = true;
+  const authTimeoutId = window.setTimeout(() => {
+    if (mounted) {
+      setAuthLoading(false);
+    }
+  }, 3000);
 
   const loadSession = async () => {
-    const { data, error } = await supabase.auth.getSession();
+    try {
+      const { data, error } = await supabase.auth.getSession();
 
-    if (error) {
-      console.error("Error loading session:", error.message);
-    }
+      if (error) {
+        console.error("Error loading session:", error.message);
+      }
 
-    if (mounted) {
-      setSession(data.session ?? null);
-      setAuthLoading(false);
+      if (mounted) {
+        setSession(data.session ?? null);
+      }
+    } catch (error) {
+      console.error("Error loading session:", error);
+    } finally {
+      window.clearTimeout(authTimeoutId);
+      if (mounted) {
+        setAuthLoading(false);
+      }
     }
   };
 
@@ -1019,6 +1032,7 @@ useEffect(() => {
 
   return () => {
     mounted = false;
+    window.clearTimeout(authTimeoutId);
     subscription.unsubscribe();
   };
 }, []);
