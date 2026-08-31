@@ -2,6 +2,11 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Analytics } from '@vercel/analytics/react';
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
+import { CategoryManager } from "./components/CategoryManager";
+import { SchedulePage } from "./components/SchedulePage";
+import { blackbaudScheduleProvider } from "./features/schedule/providers";
+import type { ScheduleMeeting } from "./features/schedule/types";
+import { categoryBadgeClass, type TaskCategory } from "./features/tasks/categories";
 import {
   LayoutGrid,
   MessageSquare,
@@ -22,11 +27,13 @@ import {
   Flame,
   GraduationCap,
 Calculator,
+FolderKanban,
+Plug,
 } from "lucide-react";
 
 type TaskStatus = "upcoming" | "in-progress" | "completed";
 type Priority = "high" | "medium" | "low";
-type Tab = "dashboard" | "chat" | "planner" | "grades" | "settings";
+type Tab = "dashboard" | "schedule" | "chat" | "planner" | "grades" | "settings";
 type Theme = "light" | "dark" | "forest" | "sunset" | "ocean" | "lavender" | "midnight" | "rose" | "slate";
 
 type ReminderItem = {
@@ -50,6 +57,7 @@ type Task = {
   archived?: boolean;
   reminders?: ReminderItem[];
   completedAt?: string;
+  categoryId?: string;
 };
 
 type StudySession = {
@@ -94,6 +102,7 @@ type TaskForm = {
   priority: Priority;
   details: string;
   progress: string;
+  categoryId: string;
 };
 
 type StudyPlanDraftItem = {
@@ -153,6 +162,8 @@ const STORAGE_KEYS = {
   studyPlanFlow: "zentaskra_study_plan_flow_v2",
   theme: "zentaskra_theme_v1",
   grades: "zentaskra_grades_v1",
+  categories: "zentaskra_categories_v1",
+  schedule: "zentaskra_schedule_v1",
 };
 
 const progressSteps = [0, 25, 50, 75, 100];
@@ -200,6 +211,7 @@ const emptyTaskForm: TaskForm = {
   priority: "medium",
   details: "",
   progress: "0",
+  categoryId: "",
 };
 
 const emptySessionForm: SessionForm = {
@@ -806,7 +818,7 @@ function StatCard({
   label: string;
   value: React.ReactNode;
   tint: string;
-  themeClasses: any;
+  themeClasses: { card: string };
 }) {
   return (
     <div className={cn("rounded-2xl border p-5 shadow-sm", themeClasses.card)}>
@@ -862,6 +874,16 @@ const [showAssessmentModal, setShowAssessmentModal] = useState(false);
 const [courseForm, setCourseForm] = useState<CourseForm>(emptyCourseForm);
 const [assessmentForm, setAssessmentForm] = useState<AssessmentForm>(emptyAssessmentForm);
 const [nextAssessmentFactor, setNextAssessmentFactor] = useState("1");
+const [categories, setCategories] = useState<TaskCategory[]>(
+  () => readStorage(STORAGE_KEYS.categories, [] as TaskCategory[])
+);
+const [scheduleMeetings, setScheduleMeetings] = useState<ScheduleMeeting[]>(
+  () => readStorage(STORAGE_KEYS.schedule, [] as ScheduleMeeting[])
+);
+const [scheduleLoading, setScheduleLoading] = useState(false);
+const [scheduleError, setScheduleError] = useState("");
+const [showCategoryManager, setShowCategoryManager] = useState(false);
+const [categoryFilter, setCategoryFilter] = useState("all");
 
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -993,6 +1015,18 @@ useEffect(() => {
 }, [courses]);
 
 useEffect(() => {
+  if (!session?.user) {
+    window.localStorage.setItem(STORAGE_KEYS.categories, JSON.stringify(categories));
+  }
+}, [categories, session]);
+
+useEffect(() => {
+  if (!session?.user) {
+    window.localStorage.setItem(STORAGE_KEYS.schedule, JSON.stringify(scheduleMeetings));
+  }
+}, [scheduleMeetings, session]);
+
+useEffect(() => {
   let mounted = true;
   const authTimeoutId = window.setTimeout(() => {
     if (mounted) {
@@ -1041,10 +1075,16 @@ useEffect(() => {
 
   if (session?.user?.id) {
     loadTasks(session.user.id);
+    loadCategoriesAndSchedule(session.user.id);
   } else {
     const localTasks = readStorage(STORAGE_KEYS.tasks, [] as Task[]);
     setTasks(normalizeTasks(localTasks));
+    setCategories(readStorage(STORAGE_KEYS.categories, [] as TaskCategory[]));
+    setScheduleMeetings(readStorage(STORAGE_KEYS.schedule, [] as ScheduleMeeting[]));
+    setScheduleError("");
   }
+// Authentication changes are the intentional reload boundary for remote data.
+// eslint-disable-next-line react-hooks/exhaustive-deps
 }, [session, authLoading]);
 useEffect(() => {
   if (!session?.user) {
@@ -1057,7 +1097,9 @@ useEffect(() => {
     [tasks]
   );
   const sortedActiveTasks = useMemo(() => {
-  const filtered = [...activeTasks];
+  const filtered = activeTasks.filter(
+    (task) => categoryFilter === "all" || task.categoryId === categoryFilter
+  );
 
   if (taskFilter === "priority") {
     const priorityOrder = { high: 0, medium: 1, low: 2 };
@@ -1073,7 +1115,14 @@ useEffect(() => {
   }
 
   return filtered;
-}, [activeTasks, taskFilter]);
+}, [activeTasks, taskFilter, categoryFilter]);
+
+  const missingTasks = useMemo(
+    () => activeTasks
+      .filter((task) => task.progress < 100 && getDueDateTime(task).getTime() < Date.now())
+      .sort((a, b) => getDueDateTime(a).getTime() - getDueDateTime(b).getTime()),
+    [activeTasks]
+  );
 
   const archivedTasks = useMemo(
     () => tasks.filter((task) => task.archived),
@@ -1117,6 +1166,9 @@ useEffect(() => {
       (task) => !task.archived && task.progress > 0 && task.progress < 100
     ).length,
     completed: tasks.filter((task) => task.progress >= 100).length,
+    missing: tasks.filter(
+      (task) => !task.archived && task.progress < 100 && getDueDateTime(task).getTime() < Date.now()
+    ).length,
   };
 }, [tasks]);
   const plannerStats = useMemo(() => {
@@ -1345,16 +1397,153 @@ const loadTasks = async (userId?: string) => {
       progress: typeof task.progress === "number" ? task.progress : 0,
       status: (task.status as TaskStatus) ?? "upcoming",
       archived: Boolean(task.archived),
-      reminders: (task.reminders ?? []).map((r: any) => ({
+      reminders: (task.reminders ?? []).map((r: { id: string | number; value: string; created_at: string }) => ({
         id: Number(r.id),
         value: r.value,
         createdAt: new Date(r.created_at).getTime(),
       })),
       completedAt: task.completed_at ?? undefined,
+      categoryId: task.category_id ?? undefined,
     };
   });
 
   setTasks(normalizeTasks(mappedTasks));
+};
+
+const loadCategoriesAndSchedule = async (userId: string) => {
+  setScheduleLoading(true);
+  setScheduleError("");
+
+  const [categoryResult, scheduleResult] = await Promise.all([
+    supabase.from("task_categories").select("*").eq("user_id", userId).order("name"),
+    supabase.from("schedule_meetings").select("*").eq("user_id", userId).order("start_time"),
+  ]);
+
+  if (categoryResult.error) {
+    console.error("Error loading categories:", categoryResult.error.message);
+  } else {
+    setCategories((categoryResult.data ?? []).map((category) => ({
+      id: String(category.id),
+      userId: category.user_id,
+      name: category.name,
+      color: category.color ?? "indigo",
+      icon: category.icon ?? "book",
+    })));
+  }
+
+  if (scheduleResult.error) {
+    console.error("Error loading schedule:", scheduleResult.error.message);
+    setScheduleError("Your schedule could not be loaded. Apply the included Supabase migration, then try again.");
+  } else {
+    setScheduleMeetings((scheduleResult.data ?? []).map((meeting) => ({
+      id: String(meeting.id),
+      userId: meeting.user_id,
+      title: meeting.title,
+      courseCode: meeting.course_code ?? "",
+      teacher: meeting.teacher ?? "",
+      room: meeting.room ?? "",
+      color: meeting.color ?? "indigo",
+      icon: meeting.icon ?? "book",
+      startTime: meeting.start_time,
+      endTime: meeting.end_time,
+      days: Array.isArray(meeting.days) ? meeting.days : [],
+      rotationDays: Array.isArray(meeting.rotation_days) ? meeting.rotation_days : [],
+      notes: meeting.notes ?? "",
+      source: meeting.source === "blackbaud" ? "blackbaud" : "manual",
+      externalId: meeting.external_id ?? undefined,
+      metadata: meeting.metadata ?? {},
+    })));
+  }
+
+  setScheduleLoading(false);
+};
+
+const saveCategory = async (category: TaskCategory) => {
+  if (!session?.user) {
+    setCategories((current) => current.some((item) => item.id === category.id)
+      ? current.map((item) => item.id === category.id ? category : item)
+      : [...current, category]);
+    return;
+  }
+
+  const { error } = await supabase.from("task_categories").upsert({
+    id: category.id,
+    user_id: session.user.id,
+    name: category.name,
+    color: category.color,
+    icon: category.icon,
+  });
+  if (error) {
+    console.error("Error saving category:", error.message);
+    return;
+  }
+  await loadCategoriesAndSchedule(session.user.id);
+};
+
+const deleteCategory = async (id: string) => {
+  if (!window.confirm("Delete this category? Tasks will remain uncategorized.")) return;
+  if (!session?.user) {
+    setCategories((current) => current.filter((category) => category.id !== id));
+    setTasks((current) => current.map((task) => task.categoryId === id ? { ...task, categoryId: undefined } : task));
+    return;
+  }
+
+  const { error } = await supabase.from("task_categories").delete().eq("id", id).eq("user_id", session.user.id);
+  if (error) {
+    console.error("Error deleting category:", error.message);
+    return;
+  }
+  await Promise.all([loadTasks(), loadCategoriesAndSchedule(session.user.id)]);
+};
+
+const saveScheduleMeeting = async (meeting: ScheduleMeeting) => {
+  if (!session?.user) {
+    setScheduleMeetings((current) => current.some((item) => item.id === meeting.id)
+      ? current.map((item) => item.id === meeting.id ? meeting : item)
+      : [...current, meeting]);
+    return;
+  }
+
+  const { error } = await supabase.from("schedule_meetings").upsert({
+    id: meeting.id,
+    user_id: session.user.id,
+    title: meeting.title,
+    course_code: meeting.courseCode || null,
+    teacher: meeting.teacher || null,
+    room: meeting.room || null,
+    color: meeting.color,
+    icon: meeting.icon,
+    start_time: meeting.startTime,
+    end_time: meeting.endTime,
+    days: meeting.days,
+    rotation_days: meeting.rotationDays,
+    notes: meeting.notes || null,
+    source: meeting.source,
+    external_id: meeting.externalId || null,
+    metadata: meeting.metadata ?? {},
+  });
+  if (error) {
+    console.error("Error saving schedule:", error.message);
+    setScheduleError(error.message);
+    return;
+  }
+  await loadCategoriesAndSchedule(session.user.id);
+};
+
+const deleteScheduleMeeting = async (meeting: ScheduleMeeting) => {
+  if (!window.confirm(`Delete ${meeting.title} from your schedule?`)) return;
+  if (!session?.user) {
+    setScheduleMeetings((current) => current.filter((item) => item.id !== meeting.id));
+    return;
+  }
+
+  const { error } = await supabase.from("schedule_meetings").delete().eq("id", meeting.id).eq("user_id", session.user.id);
+  if (error) {
+    console.error("Error deleting schedule:", error.message);
+    setScheduleError(error.message);
+    return;
+  }
+  await loadCategoriesAndSchedule(session.user.id);
 };
 
 
@@ -1434,6 +1623,7 @@ const updateTaskProgress = async (id: number, value: number) => {
       priority: task.priority,
       details: task.details,
       progress: String(task.progress),
+      categoryId: task.categoryId ?? "",
     });
     setShowTaskModal(true);
   };
@@ -1464,6 +1654,7 @@ const updateTaskProgress = async (id: number, value: number) => {
                   progress,
                   status: getTaskStatus(progress),
                   details,
+                  categoryId: taskForm.categoryId || undefined,
                 }
               : task
           )
@@ -1482,6 +1673,7 @@ const updateTaskProgress = async (id: number, value: number) => {
         status: getTaskStatus(progress),
         archived: false,
         reminders: [],
+        categoryId: taskForm.categoryId || undefined,
       };
 
       setTasks((prev) => normalizeTasks([newTask, ...prev]));
@@ -1503,6 +1695,7 @@ const updateTaskProgress = async (id: number, value: number) => {
     status: getTaskStatus(progress),
     details,
     archived: false,
+    category_id: taskForm.categoryId || null,
   };
 
   if (editingTaskId !== null) {
@@ -1516,6 +1709,7 @@ const updateTaskProgress = async (id: number, value: number) => {
         progress,
         status: getTaskStatus(progress),
         details,
+        category_id: taskForm.categoryId || null,
       })
       .eq("id", editingTaskId)
       .eq("user_id", session.user.id);
@@ -2068,29 +2262,28 @@ if (authLoading) {
         .zentaskra-dark .text-zinc-600 { color: #94a3b8 !important; }
         .zentaskra-dark .text-zinc-700,
         .zentaskra-dark .text-zinc-900 { color: #f3f4f6 !important; }
-        .zentaskra-dark .hover\:bg-zinc-300:hover { background-color: #334155 !important; }
         .zentaskra-dark input,
         .zentaskra-dark select,
         .zentaskra-dark textarea { background-color: #0f172a; color: #f8fafc; border-color: #334155; }
         .zentaskra-dark input::placeholder,
         .zentaskra-dark textarea::placeholder { color: #94a3b8; }
       `}</style>
-      <div className="mx-auto max-w-[1400px] px-6 py-6">
-        <div className="mb-6 flex items-center justify-between gap-4 border-b border-zinc-200 pb-4">
+      <div className="mx-auto max-w-[1400px] px-3 py-4 sm:px-6 sm:py-6">
+        <div className="mb-5 flex flex-col gap-4 border-b border-zinc-200 pb-4 sm:mb-6 lg:flex-row lg:items-center lg:justify-between">
           <div>
   <div className="flex items-center gap-3">
     <img
       src="/favicon.png"
       alt="Zentaskra logo"
-      className="h-30 w-30 rounded-xl object-contain"
+      className="h-16 w-16 rounded-xl object-contain sm:h-20 sm:w-20"
     />
-    <h1 className="text-[38px] font-semibold tracking-tight">
-      Zentaskra <span className="text-xl text-zinc-500 font-medium">(beta)</span>
+    <h1 className="text-3xl font-semibold tracking-tight sm:text-[38px]">
+      Zentaskra <span className="text-base font-medium text-zinc-500 sm:text-xl">(beta)</span>
     </h1>
   </div>
   <p className="mt-1 text-lg text-zinc-500">Your personal study assistant</p>
 </div>
-<div className="flex items-center gap-4">
+<div className="flex flex-wrap items-center gap-2 sm:gap-3">
   <button
     onClick={() => setShowHowToUse(true)}
     className="rounded-xl border border-zinc-300 px-4 py-2 text-sm font-semibold hover:bg-zinc-100"
@@ -2124,13 +2317,13 @@ if (authLoading) {
 </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
-          <aside className="border-r border-zinc-200 pr-4">
-            <nav className="space-y-3">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-6">
+          <aside className="max-w-full overflow-x-auto border-b border-zinc-200 pb-3 lg:overflow-visible lg:border-b-0 lg:border-r lg:pb-0 lg:pr-4">
+            <nav className="flex min-w-max gap-2 lg:min-w-0 lg:flex-col lg:space-y-1">
 <button
   onClick={() => setActiveTab("dashboard")}
   className={cn(
-    "flex w-full items-center gap-3 rounded-xl px-4 py-4 text-left text-xl font-semibold transition",
+    "flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-4 py-3 text-left text-base font-semibold transition lg:w-full lg:gap-3 lg:py-4 lg:text-xl",
     activeTab === "dashboard"
       ? themeClasses.tabActive
       : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
@@ -2140,9 +2333,19 @@ if (authLoading) {
 </button>
 
               <button
+                onClick={() => setActiveTab("schedule")}
+                className={cn(
+                  "flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-4 py-3 text-left text-base font-semibold transition lg:w-full lg:gap-3 lg:py-4 lg:text-xl",
+                  activeTab === "schedule" ? themeClasses.tabActive : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
+                )}
+              >
+                <CalendarDays className="h-6 w-6" /> Schedule
+              </button>
+
+              <button
                 onClick={() => setActiveTab("chat")}
                 className={cn(
-                  "flex w-full items-center gap-3 rounded-xl px-4 py-4 text-left text-xl font-semibold transition",
+                  "flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-4 py-3 text-left text-base font-semibold transition lg:w-full lg:gap-3 lg:py-4 lg:text-xl",
                   activeTab === "chat"
   ? themeClasses.tabActive
   : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
@@ -2154,7 +2357,7 @@ if (authLoading) {
               <button
                 onClick={() => setActiveTab("planner")}
                 className={cn(
-                  "flex w-full items-center gap-3 rounded-xl px-4 py-4 text-left text-xl font-semibold transition",
+                  "flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-4 py-3 text-left text-base font-semibold transition lg:w-full lg:gap-3 lg:py-4 lg:text-xl",
                   activeTab === "planner"
   ? themeClasses.tabActive
   : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
@@ -2166,7 +2369,7 @@ if (authLoading) {
               <button
   onClick={() => setActiveTab("grades")}
   className={cn(
-    "flex w-full items-center gap-3 rounded-xl px-4 py-4 text-left text-xl font-semibold transition",
+    "flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-4 py-3 text-left text-base font-semibold transition lg:w-full lg:gap-3 lg:py-4 lg:text-xl",
     activeTab === "grades"
       ? themeClasses.tabActive
       : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
@@ -2178,7 +2381,7 @@ if (authLoading) {
               <button
                 onClick={() => setActiveTab("settings")}
                 className={cn(
-                  "flex w-full items-center gap-3 rounded-xl px-4 py-4 text-left text-xl font-semibold transition",
+                  "flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-4 py-3 text-left text-base font-semibold transition lg:w-full lg:gap-3 lg:py-4 lg:text-xl",
                   activeTab === "settings"
   ? themeClasses.tabActive
   : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
@@ -2190,9 +2393,21 @@ if (authLoading) {
           </aside>
 
           <main>
+            {activeTab === "schedule" && (
+              <SchedulePage
+                meetings={scheduleMeetings}
+                loading={scheduleLoading}
+                error={scheduleError}
+                cardClassName={themeClasses.card}
+                primaryButtonClassName={themeClasses.primaryButton}
+                onSave={saveScheduleMeeting}
+                onDelete={deleteScheduleMeeting}
+              />
+            )}
+
             {activeTab === "dashboard" && (
               <div className="space-y-5">
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                   <StatCard
   icon={<Clock3 className="h-6 w-6 text-blue-500" />}
   label="Upcoming"
@@ -2214,6 +2429,13 @@ if (authLoading) {
   tint="bg-green-100"
   themeClasses={themeClasses}
 />
+                  <StatCard
+                    icon={<CircleAlert className="h-6 w-6 text-red-500" />}
+                    label="Missing"
+                    value={stats.missing}
+                    tint="bg-red-100"
+                    themeClasses={themeClasses}
+                  />
                  <StatCard
   icon={<Flame className="h-6 w-6 text-orange-500" />}
   label="Streak"
@@ -2223,23 +2445,66 @@ if (authLoading) {
 />
                 </div>
 
+                {missingTasks.length > 0 && (
+                  <section className={cn("rounded-2xl border border-red-200 p-4 shadow-sm sm:p-5", themeClasses.card)}>
+                    <div className="mb-4 flex items-start gap-3">
+                      <div className="rounded-xl bg-red-100 p-2.5"><CircleAlert className="h-6 w-6 text-red-600" /></div>
+                      <div>
+                        <h2 className="text-xl font-semibold sm:text-2xl">Missing Assignments</h2>
+                        <p className="text-sm text-zinc-500">Automatically detected from unfinished work past its due date.</p>
+                      </div>
+                    </div>
+                    <div className="grid gap-3 lg:grid-cols-2">
+                      {missingTasks.map((task) => {
+                        const category = categories.find((item) => item.id === task.categoryId);
+                        return (
+                          <div key={task.id} className="rounded-xl border border-red-200 bg-red-50/70 p-4">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="min-w-0">
+                                <h3 className="truncate text-lg font-semibold">{task.title}</h3>
+                                <div className="mt-2 flex flex-wrap gap-2 text-sm">
+                                  <span className="rounded-full bg-white px-2.5 py-1 text-zinc-600">{task.subject}</span>
+                                  {category && <span className={cn("rounded-full px-2.5 py-1", categoryBadgeClass(category.color))}>{category.name}</span>}
+                                </div>
+                                <p className="mt-2 text-sm font-medium text-red-700">{getDueLabel(task)}</p>
+                              </div>
+                              <div className="flex gap-2">
+                                <button onClick={() => openEditTaskModal(task)} className="min-h-11 flex-1 rounded-xl border border-red-200 bg-white px-3 font-semibold text-zinc-700 sm:flex-none">Reschedule</button>
+                                <button onClick={() => completeTask(task.id)} className="min-h-11 flex-1 rounded-xl bg-[#02031c] px-3 font-semibold text-white sm:flex-none">Complete</button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                )}
+
                 <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-                  <section className={cn("rounded-2xl border p-5 shadow-sm", themeClasses.card)}>
-                    <div className="mb-5 flex items-center justify-between gap-4">
-                      <h2 className="flex items-center gap-2 text-[34px] font-semibold tracking-tight">
+                  <section className={cn("rounded-2xl border p-4 shadow-sm sm:p-5", themeClasses.card)}>
+                    <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight sm:text-[34px]">
                         <Sparkles className="h-7 w-7" /> Your Assignments
                       </h2>
                       <button
                         onClick={openAddTaskModal}
-                        className="flex items-center gap-2 rounded-xl bg-[#02031c] px-5 py-3 text-lg font-semibold text-white"
+                        className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#02031c] px-5 py-3 text-base font-semibold text-white sm:text-lg"
                       >
                         <Plus className="h-5 w-5" /> Add Task
                       </button>
                     </div>
 
                     <div className="space-y-4">
-  <div className="flex items-center justify-end gap-3">
-    <span className="text-sm font-medium text-zinc-500">Sort assignments</span>
+  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto]">
+    <select
+      value={categoryFilter}
+      onChange={(e) => setCategoryFilter(e.target.value)}
+      aria-label="Filter by category"
+      className="min-h-11 rounded-xl border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-700 outline-none"
+    >
+      <option value="all">All categories</option>
+      {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+    </select>
     <select
       value={taskFilter}
       onChange={(e) =>
@@ -2252,7 +2517,8 @@ if (authLoading) {
             | "progressLow"
         )
       }
-      className="rounded-xl border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 outline-none"
+      aria-label="Sort assignments"
+      className="min-h-11 rounded-xl border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-700 outline-none"
     >
       <option value="default">Default</option>
       <option value="priority">Highest Priority</option>
@@ -2260,9 +2526,12 @@ if (authLoading) {
       <option value="progressHigh">Most Progress</option>
       <option value="progressLow">Least Progress</option>
     </select>
+    <button onClick={() => setShowCategoryManager(true)} className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-zinc-300 px-4 text-sm font-semibold text-zinc-700 sm:col-span-2 lg:col-span-1">
+      <FolderKanban className="h-4 w-4" /> Manage categories
+    </button>
   </div>
 
-  {activeTasks.length === 0 ? (
+  {sortedActiveTasks.length === 0 ? (
                         <div className={cn("rounded-[28px] border border-dashed px-8 py-14 text-center", themeClasses.card)}>
                           <p className="text-2xl text-zinc-500">
                             No active tasks yet. Click <span className="font-semibold text-zinc-700">Add Task</span> to create your first assignment.
@@ -2279,8 +2548,8 @@ if (authLoading) {
   : cn("border-zinc-200 hover:opacity-90", themeClasses.card)
                           )}
                         >
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex-1 text-left">
+                          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0 flex-1 text-left">
                               <div className="flex flex-wrap items-center gap-3">
                                 <span
                                   className={cn(
@@ -2288,10 +2557,14 @@ if (authLoading) {
                                     priorityDotColor(task.priority)
                                   )}
                                 />
-                                <h3 className="text-2xl font-semibold">{task.title}</h3>
+                                <h3 className="text-xl font-semibold sm:text-2xl">{task.title}</h3>
                                 <span className="rounded-full bg-zinc-100 px-3 py-1 text-sm text-zinc-600">
                                   {task.subject}
                                 </span>
+                                {(() => {
+                                  const category = categories.find((item) => item.id === task.categoryId);
+                                  return category ? <span className={cn("rounded-full px-3 py-1 text-sm", categoryBadgeClass(category.color))}>{category.name}</span> : null;
+                                })()}
                               </div>
 
                               <p className="mt-3 text-lg text-zinc-500">
@@ -2319,14 +2592,14 @@ if (authLoading) {
                               </div>
                             </div>
 
-                            <div className="flex flex-col items-end gap-2">
-                              <div className="flex gap-2">
+                            <div className="flex flex-col gap-2 sm:items-end">
+                              <div className="flex flex-wrap gap-2">
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     openEditTaskModal(task);
                                   }}
-                                  className="rounded-lg border border-zinc-200 p-2 text-zinc-600"
+                                  className="min-h-11 min-w-11 rounded-lg border border-zinc-200 p-2 text-zinc-600"
                                   title="Edit"
                                 >
                                   <Pencil className="h-4 w-4" />
@@ -2336,7 +2609,7 @@ if (authLoading) {
                                     e.stopPropagation();
                                     completeTask(task.id);
                                   }}
-                                  className="rounded-xl border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700"
+                                  className="min-h-11 rounded-xl border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700"
                                   title="Complete"
                                 >
                                   Complete
@@ -2346,7 +2619,7 @@ if (authLoading) {
     e.stopPropagation();
     archiveTask(task.id);
   }}
-  className="rounded-xl border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700"
+  className="min-h-11 rounded-xl border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700"
   title="Archive"
 >
   Archive
@@ -2356,7 +2629,7 @@ if (authLoading) {
                                     e.stopPropagation();
                                     deleteTask(task.id);
                                   }}
-                                  className="rounded-lg border border-zinc-200 p-2 text-rose-500"
+                                  className="min-h-11 min-w-11 rounded-lg border border-zinc-200 p-2 text-rose-500"
                                   title="Delete"
                                 >
                                   <Trash2 className="h-4 w-4" />
@@ -3252,6 +3525,23 @@ if (authLoading) {
   </p>
 </div>
 
+<div className="rounded-2xl border border-zinc-200 p-5">
+  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div className="flex items-start gap-3">
+      <div className="rounded-xl bg-blue-100 p-3"><Plug className="h-6 w-6 text-blue-700" /></div>
+      <div>
+        <h3 className="text-2xl font-semibold">Integrations</h3>
+        <p className="mt-1 text-zinc-500">Connect official school services when they become available.</p>
+      </div>
+    </div>
+    <span className="w-fit rounded-full bg-zinc-100 px-3 py-1 text-sm font-semibold text-zinc-600">Coming soon</span>
+  </div>
+  <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-4">
+    <p className="font-semibold">{blackbaudScheduleProvider.label}</p>
+    <p className="mt-1 text-sm text-zinc-500">Future connection will use official Blackbaud OAuth and school authorization. Zentaskra will never ask for your BBK12 password.</p>
+  </div>
+</div>
+
 </section>
               </div>
             )}
@@ -3332,7 +3622,8 @@ if (authLoading) {
             onChange={(e) => setAuthPassword(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
-                authMode === "login" ? handleLogin() : handleSignUp();
+                if (authMode === "login") handleLogin();
+                else handleSignUp();
               }
             }}
             placeholder="Enter your password"
@@ -3758,8 +4049,8 @@ if (authLoading) {
       )}
 
       {showTaskModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
+          <div className="max-h-[94vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-xl sm:rounded-3xl sm:p-6">
             <div className="mb-5 flex items-center justify-between">
               <div>
                 <h3 className="text-3xl font-semibold">
@@ -3810,6 +4101,18 @@ if (authLoading) {
                   className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none"
                   placeholder="Mathematics"
                 />
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-zinc-600">Category <span className="font-normal text-zinc-400">(optional)</span></span>
+                <select
+                  value={taskForm.categoryId}
+                  onChange={(e) => setTaskForm((prev) => ({ ...prev, categoryId: e.target.value }))}
+                  className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none"
+                >
+                  <option value="">No category</option>
+                  {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                </select>
               </label>
 
               <label className="space-y-2">
@@ -3937,6 +4240,15 @@ if (authLoading) {
         </div>
       )}
 
+      {showCategoryManager && (
+        <CategoryManager
+          categories={categories}
+          onClose={() => setShowCategoryManager(false)}
+          onSave={saveCategory}
+          onDelete={deleteCategory}
+        />
+      )}
+
       <Analytics />
     </div>
   );
@@ -3960,7 +4272,7 @@ function calculateCompletionStreak(tasks: Task[]) {
   const today = new Date();
   const todayKey = getLocalDateKey(today);
 
-  let cursor = new Date(today);
+  const cursor = new Date(today);
   if (!completedSet.has(todayKey)) {
     cursor.setDate(cursor.getDate() - 1);
     if (!completedSet.has(getLocalDateKey(cursor))) {
