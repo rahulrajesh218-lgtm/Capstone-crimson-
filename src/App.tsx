@@ -3,10 +3,16 @@ import { Analytics } from '@vercel/analytics/react';
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
 import { CategoryManager } from "./components/CategoryManager";
+import { InstallAppCard } from "./components/InstallAppCard";
+import { MobileBottomNav } from "./components/MobileBottomNav";
+import { MobileDashboard } from "./components/MobileDashboard";
+import { MobileSheet } from "./components/MobileSheet";
+import { MobileTasksPage } from "./components/MobileTasksPage";
 import { SchedulePage } from "./components/SchedulePage";
 import { blackbaudScheduleProvider } from "./features/schedule/providers";
 import type { ScheduleMeeting } from "./features/schedule/types";
 import { categoryBadgeClass, type TaskCategory } from "./features/tasks/categories";
+import { usePwaInstall } from "./pwa";
 import {
   LayoutGrid,
   MessageSquare,
@@ -29,11 +35,12 @@ import {
 Calculator,
 FolderKanban,
 Plug,
+Menu,
 } from "lucide-react";
 
 type TaskStatus = "upcoming" | "in-progress" | "completed";
 type Priority = "high" | "medium" | "low";
-type Tab = "dashboard" | "schedule" | "chat" | "planner" | "grades" | "settings";
+type Tab = "dashboard" | "tasks" | "schedule" | "chat" | "planner" | "grades" | "settings";
 type Theme = "light" | "dark" | "forest" | "sunset" | "ocean" | "lavender" | "midnight" | "rose" | "slate";
 
 type ReminderItem = {
@@ -836,6 +843,7 @@ function StatCard({
 }
 
 export default function App() {
+  const pwaInstall = usePwaInstall();
    const [session, setSession] = useState<Session | null>(null);
 const [authLoading, setAuthLoading] = useState(true);
 const [guestMode, setGuestMode] = useState<boolean>(
@@ -884,6 +892,7 @@ const [scheduleLoading, setScheduleLoading] = useState(false);
 const [scheduleError, setScheduleError] = useState("");
 const [showCategoryManager, setShowCategoryManager] = useState(false);
 const [categoryFilter, setCategoryFilter] = useState("all");
+const [showMobileMore, setShowMobileMore] = useState(false);
 
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -1123,6 +1132,57 @@ useEffect(() => {
       .sort((a, b) => getDueDateTime(a).getTime() - getDueDateTime(b).getTime()),
     [activeTasks]
   );
+
+  const mobileDashboardData = useMemo(() => {
+    const now = new Date();
+    const todayKey = formatDateInput(now);
+    const todayName = now.toLocaleDateString("en-US", { weekday: "long" });
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const todaysClasses = scheduleMeetings
+      .filter((meeting) => meeting.days.includes(todayName))
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const toMinutes = (time: string) => {
+      const [hours, minutes] = time.split(":").map(Number);
+      return (hours || 0) * 60 + (minutes || 0);
+    };
+    const currentClass = todaysClasses.find(
+      (meeting) => toMinutes(meeting.startTime) <= nowMinutes && toMinutes(meeting.endTime) > nowMinutes
+    );
+    const nextClass = todaysClasses.find((meeting) => toMinutes(meeting.startTime) > nowMinutes);
+    const highlightedClass = currentClass ?? nextClass ?? null;
+    const mapTask = (task: Task) => ({
+      id: task.id,
+      title: task.title,
+      subject: task.subject,
+      dueLabel: getDueLabel(task),
+      categoryName: categories.find((category) => category.id === task.categoryId)?.name,
+    });
+
+    return {
+      nextClass: highlightedClass ? {
+        title: highlightedClass.title,
+        timeLabel: `${formatTimeDisplay(highlightedClass.startTime)}–${formatTimeDisplay(highlightedClass.endTime)}`,
+        room: highlightedClass.room,
+        status: currentClass ? "current" as const : "next" as const,
+      } : null,
+      dueToday: activeTasks.filter((task) => task.progress < 100 && task.dueDate === todayKey).map(mapTask),
+      missing: missingTasks.map(mapTask),
+      upcoming: activeTasks
+        .filter((task) => task.progress < 100 && getDueDateTime(task).getTime() > now.getTime() && task.dueDate !== todayKey)
+        .sort((a, b) => getDueDateTime(a).getTime() - getDueDateTime(b).getTime())
+        .map(mapTask),
+    };
+  }, [activeTasks, categories, missingTasks, scheduleMeetings]);
+
+  const mobileTasks = useMemo(() => activeTasks.map((task) => ({
+    id: task.id,
+    title: task.title,
+    subject: task.subject,
+    categoryId: task.categoryId,
+    dueLabel: getDueLabel(task),
+    progress: task.progress,
+    missing: task.progress < 100 && getDueDateTime(task).getTime() < Date.now(),
+  })), [activeTasks]);
 
   const archivedTasks = useMemo(
     () => tasks.filter((task) => task.archived),
@@ -2261,15 +2321,24 @@ if (authLoading) {
         .zentaskra-dark .text-zinc-500,
         .zentaskra-dark .text-zinc-600 { color: #94a3b8 !important; }
         .zentaskra-dark .text-zinc-700,
-        .zentaskra-dark .text-zinc-900 { color: #f3f4f6 !important; }
+        .zentaskra-dark .text-zinc-900,
+        .zentaskra-dark .text-zinc-950 { color: #f3f4f6 !important; }
         .zentaskra-dark input,
         .zentaskra-dark select,
         .zentaskra-dark textarea { background-color: #0f172a; color: #f8fafc; border-color: #334155; }
         .zentaskra-dark input::placeholder,
         .zentaskra-dark textarea::placeholder { color: #94a3b8; }
       `}</style>
-      <div className="mx-auto max-w-[1400px] px-3 py-4 sm:px-6 sm:py-6">
-        <div className="mb-5 flex flex-col gap-4 border-b border-zinc-200 pb-4 sm:mb-6 lg:flex-row lg:items-center lg:justify-between">
+      <div className="mx-auto min-h-[100dvh] max-w-[1400px] px-3 pb-[calc(5.25rem+env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6 md:py-6 md:pb-6">
+        <div className="mb-4 flex items-center justify-between gap-3 md:hidden">
+          <button onClick={() => setActiveTab("dashboard")} className="flex min-h-11 min-w-0 items-center gap-2 rounded-xl text-left" aria-label="Go to Home">
+            <img src="/icons/pwa-192.png" alt="" className="h-10 w-10 shrink-0 rounded-xl" />
+            <div className="min-w-0"><p className="truncate text-lg font-semibold">Zentaskra</p><p className="truncate text-xs text-zinc-500">{session?.user?.email ?? "Guest mode"}</p></div>
+          </button>
+          <button onClick={() => setShowMobileMore(true)} className="min-h-11 min-w-11 rounded-xl border border-zinc-200 bg-white p-2 text-zinc-700" aria-label="Open More menu"><Menu className="mx-auto h-5 w-5" /></button>
+        </div>
+
+        <div className="mb-6 hidden gap-4 border-b border-zinc-200 pb-4 md:flex md:flex-row md:items-center md:justify-between">
           <div>
   <div className="flex items-center gap-3">
     <img
@@ -2317,14 +2386,14 @@ if (authLoading) {
 </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-6">
-          <aside className="max-w-full overflow-x-auto border-b border-zinc-200 pb-3 lg:overflow-visible lg:border-b-0 lg:border-r lg:pb-0 lg:pr-4">
-            <nav className="flex min-w-max gap-2 lg:min-w-0 lg:flex-col lg:space-y-1">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-[220px_minmax(0,1fr)] md:gap-6">
+          <aside className="hidden border-r border-zinc-200 pr-4 md:block">
+            <nav className="flex flex-col space-y-1">
 <button
   onClick={() => setActiveTab("dashboard")}
   className={cn(
-    "flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-4 py-3 text-left text-base font-semibold transition lg:w-full lg:gap-3 lg:py-4 lg:text-xl",
-    activeTab === "dashboard"
+    "flex min-h-11 w-full items-center gap-3 rounded-xl px-4 py-4 text-left text-xl font-semibold transition",
+    activeTab === "dashboard" || activeTab === "tasks"
       ? themeClasses.tabActive
       : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
   )}
@@ -2335,7 +2404,7 @@ if (authLoading) {
               <button
                 onClick={() => setActiveTab("schedule")}
                 className={cn(
-                  "flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-4 py-3 text-left text-base font-semibold transition lg:w-full lg:gap-3 lg:py-4 lg:text-xl",
+                  "flex min-h-11 w-full items-center gap-3 rounded-xl px-4 py-4 text-left text-xl font-semibold transition",
                   activeTab === "schedule" ? themeClasses.tabActive : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
                 )}
               >
@@ -2345,7 +2414,7 @@ if (authLoading) {
               <button
                 onClick={() => setActiveTab("chat")}
                 className={cn(
-                  "flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-4 py-3 text-left text-base font-semibold transition lg:w-full lg:gap-3 lg:py-4 lg:text-xl",
+                  "flex min-h-11 w-full items-center gap-3 rounded-xl px-4 py-4 text-left text-xl font-semibold transition",
                   activeTab === "chat"
   ? themeClasses.tabActive
   : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
@@ -2357,7 +2426,7 @@ if (authLoading) {
               <button
                 onClick={() => setActiveTab("planner")}
                 className={cn(
-                  "flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-4 py-3 text-left text-base font-semibold transition lg:w-full lg:gap-3 lg:py-4 lg:text-xl",
+                  "flex min-h-11 w-full items-center gap-3 rounded-xl px-4 py-4 text-left text-xl font-semibold transition",
                   activeTab === "planner"
   ? themeClasses.tabActive
   : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
@@ -2369,7 +2438,7 @@ if (authLoading) {
               <button
   onClick={() => setActiveTab("grades")}
   className={cn(
-    "flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-4 py-3 text-left text-base font-semibold transition lg:w-full lg:gap-3 lg:py-4 lg:text-xl",
+    "flex min-h-11 w-full items-center gap-3 rounded-xl px-4 py-4 text-left text-xl font-semibold transition",
     activeTab === "grades"
       ? themeClasses.tabActive
       : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
@@ -2381,7 +2450,7 @@ if (authLoading) {
               <button
                 onClick={() => setActiveTab("settings")}
                 className={cn(
-                  "flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-4 py-3 text-left text-base font-semibold transition lg:w-full lg:gap-3 lg:py-4 lg:text-xl",
+                  "flex min-h-11 w-full items-center gap-3 rounded-xl px-4 py-4 text-left text-xl font-semibold transition",
                   activeTab === "settings"
   ? themeClasses.tabActive
   : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
@@ -2392,7 +2461,40 @@ if (authLoading) {
             </nav>
           </aside>
 
-          <main>
+          <main className="min-w-0">
+            {activeTab === "dashboard" && (
+              <MobileDashboard
+                nextClass={mobileDashboardData.nextClass}
+                dueToday={mobileDashboardData.dueToday}
+                missing={mobileDashboardData.missing}
+                upcoming={mobileDashboardData.upcoming}
+                completedCount={stats.completed}
+                onTasks={() => setActiveTab("tasks")}
+                onSchedule={() => setActiveTab("schedule")}
+                onAddTask={openAddTaskModal}
+                onEditTask={(id) => {
+                  const task = tasks.find((item) => item.id === id);
+                  if (task) openEditTaskModal(task);
+                }}
+              />
+            )}
+
+            {activeTab === "tasks" && (
+              <MobileTasksPage
+                tasks={mobileTasks}
+                categories={categories}
+                selectedCategory={categoryFilter}
+                onCategoryChange={setCategoryFilter}
+                onAdd={openAddTaskModal}
+                onEdit={(id) => {
+                  const task = tasks.find((item) => item.id === id);
+                  if (task) openEditTaskModal(task);
+                }}
+                onComplete={completeTask}
+                onManageCategories={() => setShowCategoryManager(true)}
+              />
+            )}
+
             {activeTab === "schedule" && (
               <SchedulePage
                 meetings={scheduleMeetings}
@@ -2405,8 +2507,8 @@ if (authLoading) {
               />
             )}
 
-            {activeTab === "dashboard" && (
-              <div className="space-y-5">
+            {(activeTab === "dashboard" || activeTab === "tasks") && (
+              <div className="hidden space-y-5 md:block">
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                   <StatCard
   icon={<Clock3 className="h-6 w-6 text-blue-500" />}
@@ -3525,6 +3627,13 @@ if (authLoading) {
   </p>
 </div>
 
+<InstallAppCard
+  canInstall={pwaInstall.canInstall}
+  isIosSafari={pwaInstall.isIosSafari}
+  isStandalone={pwaInstall.isStandalone}
+  onInstall={pwaInstall.install}
+/>
+
 <div className="rounded-2xl border border-zinc-200 p-5">
   <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
     <div className="flex items-start gap-3">
@@ -3553,16 +3662,16 @@ if (authLoading) {
       </div>
       {showAuthGate && (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-    <div className="w-full max-w-md rounded-3xl border border-zinc-200 bg-white p-8 shadow-2xl">
+    <div className="max-h-[100dvh] w-full max-w-md overflow-y-auto rounded-3xl border border-zinc-200 bg-white p-5 shadow-2xl sm:p-8">
       <div className="text-center">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center justify-center gap-2 sm:gap-3">
   <img
     src="/favicon.png"
     alt="Zentaskra logo"
-    className="h-14 w-14 rounded-xl object-contain"
+    className="h-12 w-12 shrink-0 rounded-xl object-contain sm:h-14 sm:w-14"
   />
-  <h1 className="text-[38px] font-semibold tracking-tight">
-    Zentaskra <span className="text-xl text-zinc-500 font-medium">(beta)</span>
+  <h1 className="min-w-0 text-2xl font-semibold tracking-tight sm:text-[38px]">
+    Zentaskra <span className="text-sm font-medium text-zinc-500 sm:text-xl">(beta)</span>
   </h1>
 </div>
         <p className="mt-2 text-zinc-500">
@@ -4049,29 +4158,17 @@ if (authLoading) {
       )}
 
       {showTaskModal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
-          <div className="max-h-[94vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-xl sm:rounded-3xl sm:p-6">
-            <div className="mb-5 flex items-center justify-between">
-              <div>
-                <h3 className="text-3xl font-semibold">
-                  {editingTaskId !== null ? "Edit Task" : "Add Task"}
-                </h3>
-                <p className="mt-1 text-zinc-500">
-                  Create or update an assignment on your dashboard.
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setShowTaskModal(false);
-                  setEditingTaskId(null);
-                  setTaskForm(emptyTaskForm);
-                }}
-                className="rounded-full bg-zinc-100 p-2 text-zinc-600"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
+        <MobileSheet
+          open
+          title={editingTaskId !== null ? "Edit Task" : "Add Task"}
+          description="Create or update an assignment on your dashboard."
+          onClose={() => {
+            setShowTaskModal(false);
+            setEditingTaskId(null);
+            setTaskForm(emptyTaskForm);
+          }}
+          className="sm:max-w-xl"
+        >
             <div className="grid gap-4 md:grid-cols-2">
               <label className="space-y-2 md:col-span-2">
                 <span className="text-sm font-medium text-zinc-600">Task Title</span>
@@ -4218,7 +4315,7 @@ if (authLoading) {
               </label>
             </div>
 
-            <div className="mt-6 flex justify-end gap-3">
+            <div className="sticky bottom-0 -mx-4 mt-6 flex flex-col-reverse gap-2 border-t border-zinc-200 bg-white px-4 pb-[max(0.25rem,env(safe-area-inset-bottom))] pt-4 sm:static sm:mx-0 sm:flex-row sm:justify-end sm:border-0 sm:p-0">
               <button
                 onClick={() => {
                   setShowTaskModal(false);
@@ -4236,8 +4333,7 @@ if (authLoading) {
                 Save Task
               </button>
             </div>
-                    </div>
-        </div>
+        </MobileSheet>
       )}
 
       {showCategoryManager && (
@@ -4247,6 +4343,53 @@ if (authLoading) {
           onSave={saveCategory}
           onDelete={deleteCategory}
         />
+      )}
+
+      {!showAuthGate && (
+        <>
+          <MobileBottomNav
+            activeTab={activeTab}
+            onNavigate={(tab) => {
+              setActiveTab(tab);
+              setShowMobileMore(false);
+            }}
+            onMore={() => setShowMobileMore(true)}
+          />
+          <MobileSheet open={showMobileMore} title="More" description="Your account, tools, and app settings." onClose={() => setShowMobileMore(false)} className="sm:max-w-md">
+            <nav className="grid gap-2" aria-label="More navigation">
+              {([
+                ["chat", "AI Chat"],
+                ["planner", "Study Planner"],
+                ["settings", "Settings"],
+              ] as const).map(([tab, label]) => (
+                <button key={tab} onClick={() => { setActiveTab(tab); setShowMobileMore(false); }} className="min-h-12 rounded-xl border border-zinc-200 px-4 text-left font-semibold hover:bg-zinc-50">
+                  {label}
+                </button>
+              ))}
+              <button onClick={() => { setShowHowToUse(true); setShowMobileMore(false); }} className="min-h-12 rounded-xl border border-zinc-200 px-4 text-left font-semibold hover:bg-zinc-50">
+                How to Use Zentaskra
+              </button>
+            </nav>
+            <div className="mt-5">
+              <InstallAppCard
+                canInstall={pwaInstall.canInstall}
+                isIosSafari={pwaInstall.isIosSafari}
+                isStandalone={pwaInstall.isStandalone}
+                onInstall={pwaInstall.install}
+              />
+            </div>
+            <button
+              onClick={() => {
+                setShowMobileMore(false);
+                if (session) handleLogout();
+                else setGuestMode(false);
+              }}
+              className="mt-5 min-h-12 w-full rounded-xl border border-zinc-300 px-4 font-semibold text-zinc-700"
+            >
+              {session ? "Log out" : "Sign in or create an account"}
+            </button>
+          </MobileSheet>
+        </>
       )}
 
       <Analytics />

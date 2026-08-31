@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Folder, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Folder, Pencil, Plus, Trash2 } from "lucide-react";
+import { MobileSheet } from "./MobileSheet";
 import {
   CATEGORY_COLORS,
   CATEGORY_ICONS,
@@ -34,18 +35,13 @@ export function CategoryManager({ categories, onClose, onSave, onDelete }: Props
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
-      <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-xl sm:rounded-3xl sm:p-6">
-        <div className="mb-5 flex items-start justify-between gap-4">
-          <div>
-            <h3 className="text-2xl font-semibold sm:text-3xl">Task Categories</h3>
-            <p className="mt-1 text-sm text-zinc-500">Use a few clear labels to keep assignments organized.</p>
-          </div>
-          <button onClick={onClose} className="min-h-11 min-w-11 rounded-full bg-zinc-100 p-2 text-zinc-600" aria-label="Close categories">
-            <X className="mx-auto h-5 w-5" />
-          </button>
-        </div>
-
+    <MobileSheet
+      open
+      title="Task Categories"
+      description="Use a few clear labels to keep assignments organized."
+      onClose={onClose}
+      className="sm:max-w-xl"
+    >
         <div className="rounded-2xl border border-zinc-200 p-4">
           <label className="block text-sm font-medium text-zinc-600">
             Category name
@@ -92,8 +88,6 @@ export function CategoryManager({ categories, onClose, onSave, onDelete }: Props
             );
           }) : <p className="rounded-xl border border-dashed border-zinc-300 p-5 text-center text-zinc-500">No categories yet. They are optional.</p>}
         </div>
-      </div>
-    </div>
+    </MobileSheet>
   );
 }
-

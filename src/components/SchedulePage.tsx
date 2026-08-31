@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
-import { CalendarDays, Clock3, MapPin, Pencil, Plus, Trash2, UserRound, X } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Clock3, MapPin, Pencil, Plus, Trash2, UserRound } from "lucide-react";
 import type { ScheduleMeeting, ScheduleMeetingInput } from "../features/schedule/types";
+import { MobileSheet } from "./MobileSheet";
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const COLORS = [
@@ -46,6 +47,19 @@ function currentWeekday() {
   return WEEKDAYS.includes(day) ? day : "Monday";
 }
 
+function isSameLocalDay(first: Date, second: Date) {
+  return first.getFullYear() === second.getFullYear()
+    && first.getMonth() === second.getMonth()
+    && first.getDate() === second.getDate();
+}
+
+function dateForWeekday(anchor: Date, weekday: string) {
+  const next = new Date(anchor);
+  const mondayOffset = anchor.getDay() === 0 ? -6 : 1 - anchor.getDay();
+  next.setDate(anchor.getDate() + mondayOffset + WEEKDAYS.indexOf(weekday));
+  return next;
+}
+
 function formatTime(time: string) {
   const [hours, minutes] = time.split(":").map(Number);
   return new Date(2000, 0, 1, hours || 0, minutes || 0).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -63,10 +77,11 @@ function MeetingCard({ meeting, status, onEdit, onDelete }: { meeting: ScheduleM
             {status && <span className="rounded-full bg-white/80 px-2 py-1 text-xs font-semibold uppercase tracking-wide">{status}</span>}
           </div>
           <p className="mt-1 flex items-center gap-2 text-sm text-zinc-600"><Clock3 className="h-4 w-4" />{formatTime(meeting.startTime)}–{formatTime(meeting.endTime)}</p>
-          {(meeting.room || meeting.teacher) && (
+          {(meeting.room || meeting.teacher || meeting.courseCode) && (
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-zinc-600">
               {meeting.room && <span className="flex items-center gap-1"><MapPin className="h-4 w-4" />{meeting.room}</span>}
               {meeting.teacher && <span className="flex items-center gap-1"><UserRound className="h-4 w-4" />{meeting.teacher}</span>}
+              {meeting.courseCode && <span className="font-medium">{meeting.courseCode}</span>}
             </div>
           )}
           {meeting.rotationDays.length > 0 && <p className="mt-2 text-xs font-medium text-zinc-500">Rotation: {meeting.rotationDays.join(", ")}</p>}
@@ -85,7 +100,7 @@ function MeetingCard({ meeting, status, onEdit, onDelete }: { meeting: ScheduleM
 export function SchedulePage({ meetings, loading, error, cardClassName, primaryButtonClassName, onSave, onDelete }: Props) {
   const today = currentWeekday();
   const [view, setView] = useState<"today" | "week">("today");
-  const [selectedDay, setSelectedDay] = useState(today);
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<ScheduleMeetingInput>(emptyForm);
@@ -102,6 +117,18 @@ export function SchedulePage({ meetings, loading, error, cardClassName, primaryB
     : nextMeeting
       ? `Next: ${nextMeeting.title} in ${minutesFromTime(nextMeeting.startTime) - nowMinutes} min`
       : todayMeetings.length ? "Classes are finished for today." : "No classes scheduled today.";
+
+  const selectedDay = selectedDate.toLocaleDateString("en-US", { weekday: "long" });
+  const selectedDateLabel = selectedDate.toLocaleDateString([], { month: "long", day: "numeric", year: "numeric" });
+  const selectedIsToday = isSameLocalDay(selectedDate, new Date());
+
+  const shiftSelectedDay = (amount: number) => {
+    setSelectedDate((current) => {
+      const next = new Date(current);
+      next.setDate(current.getDate() + amount);
+      return next;
+    });
+  };
 
   const openNew = () => {
     setEditingId(null);
@@ -152,36 +179,53 @@ export function SchedulePage({ meetings, loading, error, cardClassName, primaryB
           <button onClick={openNew} className={`flex min-h-11 items-center justify-center gap-2 rounded-xl px-5 font-semibold ${primaryButtonClassName}`}><Plus className="h-5 w-5" />Add class</button>
         </div>
 
-        <div className="mt-5 flex rounded-xl bg-zinc-100 p-1 sm:w-fit">
+        <div className="mt-5 hidden rounded-xl bg-zinc-100 p-1 lg:flex lg:w-fit">
           {(["today", "week"] as const).map((option) => <button key={option} onClick={() => setView(option)} className={`min-h-11 flex-1 rounded-lg px-5 font-semibold capitalize sm:flex-none ${view === option ? "bg-white shadow-sm" : "text-zinc-500"}`}>{option}</button>)}
         </div>
       </section>
 
       {error && <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">{error}</div>}
-      {loading ? <div className={`rounded-2xl border p-8 text-center text-zinc-500 ${cardClassName}`}>Loading your schedule…</div> : view === "today" ? (
+      {loading ? <div className={`rounded-2xl border p-8 text-center text-zinc-500 ${cardClassName}`}>Loading your schedule…</div> : (
+        <>
+          <section className={`rounded-2xl border p-4 shadow-sm lg:hidden ${cardClassName}`}>
+            <div className="flex items-center justify-between gap-2">
+              <button onClick={() => shiftSelectedDay(-1)} className="min-h-11 min-w-11 rounded-xl border border-zinc-200" aria-label="Previous day"><ChevronLeft className="mx-auto h-5 w-5" /></button>
+              <div className="min-w-0 text-center">
+                <p className="truncate text-sm font-semibold uppercase tracking-wide text-zinc-500">{selectedDay}</p>
+                <h3 className="truncate text-xl font-semibold">{selectedDateLabel}</h3>
+              </div>
+              <button onClick={() => shiftSelectedDay(1)} className="min-h-11 min-w-11 rounded-xl border border-zinc-200" aria-label="Next day"><ChevronRight className="mx-auto h-5 w-5" /></button>
+            </div>
+            <div className="mt-3 flex gap-2 overflow-x-auto pb-2 [scrollbar-width:none]">
+              {WEEKDAYS.map((day) => <button key={day} onClick={() => setSelectedDate((current) => dateForWeekday(current, day))} className={`min-h-11 min-w-12 shrink-0 rounded-xl px-3 text-sm font-semibold ${selectedDay === day ? "bg-[#02031c] text-white" : "bg-zinc-100 text-zinc-700"}`}>{day.slice(0, 3)}</button>)}
+            </div>
+            {!selectedIsToday && <button onClick={() => setSelectedDate(new Date())} className="mb-4 min-h-11 w-full rounded-xl border border-zinc-200 font-semibold">Today</button>}
+            {selectedIsToday && <p className="mb-4 rounded-xl bg-zinc-100 px-3 py-2 text-sm font-medium text-zinc-600">{nextMessage}</p>}
+            <div className="space-y-3">{renderDay(selectedDay)}</div>
+          </section>
+
+          <div className="hidden lg:block">
+          {view === "today" ? (
         <section className={`rounded-2xl border p-4 shadow-sm sm:p-6 ${cardClassName}`}>
           <div className="mb-5"><p className="text-sm font-semibold uppercase tracking-wide text-zinc-500">{today}</p><h3 className="mt-1 text-2xl font-semibold">{nextMessage}</h3></div>
           <div className="space-y-3">{renderDay(today)}</div>
         </section>
       ) : (
         <section className={`rounded-2xl border p-4 shadow-sm sm:p-6 ${cardClassName}`}>
-          <div className="mb-4 flex gap-2 overflow-x-auto pb-2 lg:hidden">
-            {WEEKDAYS.map((day) => <button key={day} onClick={() => setSelectedDay(day)} className={`min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold ${selectedDay === day ? "bg-[#02031c] text-white" : "bg-zinc-100 text-zinc-700"}`}>{day.slice(0, 3)}</button>)}
-          </div>
-          <div className="space-y-3 lg:hidden"><h3 className="text-xl font-semibold">{selectedDay}</h3>{renderDay(selectedDay)}</div>
-          <div className="hidden grid-cols-5 gap-3 lg:grid">
+          <div className="grid grid-cols-5 gap-3">
             {WEEKDAYS.slice(0, 5).map((day) => <div key={day} className="min-w-0"><h3 className="mb-3 text-center font-semibold">{day}</h3><div className="space-y-3">{renderDay(day)}</div></div>)}
           </div>
           {(meetingsByDay.Saturday?.length || meetingsByDay.Sunday?.length) ? <div className="mt-5 hidden grid-cols-2 gap-3 border-t border-zinc-200 pt-5 lg:grid">{WEEKDAYS.slice(5).map((day) => <div key={day}><h3 className="mb-3 font-semibold">{day}</h3><div className="space-y-3">{renderDay(day)}</div></div>)}</div> : null}
         </section>
       )}
+          </div>
+        </>
+      )}
 
       {!loading && !meetings.length && <section className={`rounded-2xl border border-dashed p-8 text-center ${cardClassName}`}><CalendarDays className="mx-auto h-10 w-10 text-zinc-400" /><h3 className="mt-3 text-xl font-semibold">Build your timetable once</h3><p className="mx-auto mt-2 max-w-lg text-zinc-500">Add a class, choose all the days it meets, and Zentaskra will place every occurrence in your week.</p><button onClick={openNew} className={`mt-5 min-h-11 rounded-xl px-5 font-semibold ${primaryButtonClassName}`}>Add your first class</button></section>}
 
       {showForm && (
-        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
-          <div className="max-h-[94vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-2xl sm:rounded-3xl sm:p-6">
-            <div className="mb-5 flex items-start justify-between gap-4"><div><h3 className="text-2xl font-semibold sm:text-3xl">{editingId ? "Edit class" : "Add class"}</h3><p className="mt-1 text-sm text-zinc-500">One entry can repeat across several weekdays.</p></div><button onClick={() => setShowForm(false)} className="min-h-11 min-w-11 rounded-full bg-zinc-100 p-2" aria-label="Close schedule form"><X className="mx-auto h-5 w-5" /></button></div>
+        <MobileSheet open title={editingId ? "Edit class" : "Add class"} description="One entry can repeat across several weekdays." onClose={() => setShowForm(false)} className="sm:max-w-2xl">
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="sm:col-span-2"><span className="text-sm font-medium text-zinc-600">Class name *</span><input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="AP Physics" className="mt-2 w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none" /></label>
               <label><span className="text-sm font-medium text-zinc-600">Course code</span><input value={form.courseCode} onChange={(event) => setForm((current) => ({ ...current, courseCode: event.target.value }))} placeholder="PHY4U" className="mt-2 w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none" /></label>
@@ -194,11 +238,9 @@ export function SchedulePage({ meetings, loading, error, cardClassName, primaryB
               <label className="sm:col-span-2"><span className="text-sm font-medium text-zinc-600">Rotation days <span className="font-normal text-zinc-400">(optional)</span></span><input value={rotationText} onChange={(event) => setRotationText(event.target.value)} placeholder="Day A, Day C or Week 1" className="mt-2 w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none" /><span className="mt-1 block text-xs text-zinc-400">Separate labels with commas. They are preserved for rotating timetables.</span></label>
               <label className="sm:col-span-2"><span className="text-sm font-medium text-zinc-600">Notes</span><textarea value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} className="mt-2 min-h-24 w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none" placeholder="Lab materials, pickup notes…" /></label>
             </div>
-            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button onClick={() => setShowForm(false)} className="min-h-11 rounded-xl border border-zinc-300 px-5 font-semibold">Cancel</button><button onClick={submit} className="min-h-11 rounded-xl bg-[#02031c] px-5 font-semibold text-white">Save class</button></div>
-          </div>
-        </div>
+            <div className="sticky bottom-0 -mx-4 mt-6 flex flex-col-reverse gap-2 border-t border-zinc-200 bg-white px-4 pb-[max(0.25rem,env(safe-area-inset-bottom))] pt-4 sm:static sm:mx-0 sm:flex-row sm:justify-end sm:border-0 sm:p-0"><button onClick={() => setShowForm(false)} className="min-h-11 rounded-xl border border-zinc-300 px-5 font-semibold">Cancel</button><button onClick={submit} className="min-h-11 rounded-xl bg-[#02031c] px-5 font-semibold text-white">Save class</button></div>
+        </MobileSheet>
       )}
     </div>
   );
 }
-
