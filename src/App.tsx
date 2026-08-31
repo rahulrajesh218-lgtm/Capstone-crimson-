@@ -3,9 +3,11 @@ import { Analytics } from '@vercel/analytics/react';
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
 import { CategoryManager } from "./components/CategoryManager";
+import { DesktopDashboard } from "./components/DesktopDashboard";
 import { InstallAppCard } from "./components/InstallAppCard";
 import { MobileBottomNav } from "./components/MobileBottomNav";
 import { MobileDashboard } from "./components/MobileDashboard";
+import { MobileGradesPage } from "./components/MobileGradesPage";
 import { MobileSheet } from "./components/MobileSheet";
 import { MobileTasksPage } from "./components/MobileTasksPage";
 import { SchedulePage } from "./components/SchedulePage";
@@ -1171,6 +1173,7 @@ useEffect(() => {
         .filter((task) => task.progress < 100 && getDueDateTime(task).getTime() > now.getTime() && task.dueDate !== todayKey)
         .sort((a, b) => getDueDateTime(a).getTime() - getDueDateTime(b).getTime())
         .map(mapTask),
+      todayClasses: todaysClasses,
     };
   }, [activeTasks, categories, missingTasks, scheduleMeetings]);
 
@@ -2328,6 +2331,7 @@ if (authLoading) {
         .zentaskra-dark textarea { background-color: #0f172a; color: #f8fafc; border-color: #334155; }
         .zentaskra-dark input::placeholder,
         .zentaskra-dark textarea::placeholder { color: #94a3b8; }
+        .zentaskra-dark .desktop-app-main { background-color: #0b1020 !important; }
       `}</style>
       <div className="mx-auto min-h-[100dvh] max-w-[1400px] px-3 pb-[calc(5.25rem+env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6 md:py-6 md:pb-6">
         <div className="mb-4 flex items-center justify-between gap-3 md:hidden">
@@ -2338,7 +2342,7 @@ if (authLoading) {
           <button onClick={() => setShowMobileMore(true)} className="min-h-11 min-w-11 rounded-xl border border-zinc-200 bg-white p-2 text-zinc-700" aria-label="Open More menu"><Menu className="mx-auto h-5 w-5" /></button>
         </div>
 
-        <div className="mb-6 hidden gap-4 border-b border-zinc-200 pb-4 md:flex md:flex-row md:items-center md:justify-between">
+        <div className="hidden">
           <div>
   <div className="flex items-center gap-3">
     <img
@@ -2386,83 +2390,96 @@ if (authLoading) {
 </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-[220px_minmax(0,1fr)] md:gap-6">
-          <aside className="hidden border-r border-zinc-200 pr-4 md:block">
-            <nav className="flex flex-col space-y-1">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-[240px_minmax(0,1fr)] md:gap-0 md:overflow-hidden md:rounded-3xl md:border md:border-zinc-200 md:bg-white md:shadow-sm">
+          <aside className="hidden min-h-[calc(100dvh-3rem)] flex-col border-r border-zinc-200 bg-white p-4 md:flex">
+            <button onClick={() => setActiveTab("dashboard")} className="mb-6 flex min-h-12 items-center gap-3 rounded-2xl px-2 text-left">
+              <img src="/icons/pwa-192.png" alt="" className="h-11 w-11 rounded-xl" />
+              <span className="text-xl font-semibold tracking-tight">Zentaskra</span>
+            </button>
+            <nav className="flex flex-1 flex-col space-y-1">
 <button
   onClick={() => setActiveTab("dashboard")}
   className={cn(
-    "flex min-h-11 w-full items-center gap-3 rounded-xl px-4 py-4 text-left text-xl font-semibold transition",
-    activeTab === "dashboard" || activeTab === "tasks"
-      ? themeClasses.tabActive
-      : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
+    "flex min-h-12 w-full items-center gap-3 rounded-xl px-4 text-left text-sm font-semibold transition",
+    activeTab === "dashboard"
+      ? "bg-indigo-50 text-indigo-700"
+      : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950"
   )}
 >
-  <LayoutGrid className="h-6 w-6" /> Dashboard
+  <LayoutGrid className="h-5 w-5" /> Home
 </button>
+
+              <button onClick={() => setActiveTab("tasks")} className={cn("flex min-h-12 w-full items-center gap-3 rounded-xl px-4 text-left text-sm font-semibold transition", activeTab === "tasks" ? "bg-indigo-50 text-indigo-700" : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950")}>
+                <CheckCircle2 className="h-5 w-5" /> Tasks
+              </button>
 
               <button
                 onClick={() => setActiveTab("schedule")}
                 className={cn(
-                  "flex min-h-11 w-full items-center gap-3 rounded-xl px-4 py-4 text-left text-xl font-semibold transition",
-                  activeTab === "schedule" ? themeClasses.tabActive : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
+                    "flex min-h-12 w-full items-center gap-3 rounded-xl px-4 text-left text-sm font-semibold transition",
+                    activeTab === "schedule" ? "bg-indigo-50 text-indigo-700" : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950"
                 )}
               >
-                <CalendarDays className="h-6 w-6" /> Schedule
+                <CalendarDays className="h-5 w-5" /> Schedule
               </button>
 
               <button
                 onClick={() => setActiveTab("chat")}
                 className={cn(
-                  "flex min-h-11 w-full items-center gap-3 rounded-xl px-4 py-4 text-left text-xl font-semibold transition",
-                  activeTab === "chat"
-  ? themeClasses.tabActive
-  : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
+                    "flex min-h-12 w-full items-center gap-3 rounded-xl px-4 text-left text-sm font-semibold transition",
+                    activeTab === "chat"
+  ? "bg-indigo-50 text-indigo-700"
+  : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950"
                 )}
               >
-                <MessageSquare className="h-6 w-6" /> AI Chat
+                <MessageSquare className="h-5 w-5" /> AI Chat
               </button>
 
               <button
                 onClick={() => setActiveTab("planner")}
                 className={cn(
-                  "flex min-h-11 w-full items-center gap-3 rounded-xl px-4 py-4 text-left text-xl font-semibold transition",
-                  activeTab === "planner"
-  ? themeClasses.tabActive
-  : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
+                    "flex min-h-12 w-full items-center gap-3 rounded-xl px-4 text-left text-sm font-semibold transition",
+                    activeTab === "planner"
+  ? "bg-indigo-50 text-indigo-700"
+  : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950"
                 )}
                 
               >
-                <CalendarDays className="h-6 w-6" /> Study Planner
+                <CalendarDays className="h-5 w-5" /> Study Planner
               </button>
               <button
   onClick={() => setActiveTab("grades")}
   className={cn(
-    "flex min-h-11 w-full items-center gap-3 rounded-xl px-4 py-4 text-left text-xl font-semibold transition",
+    "flex min-h-12 w-full items-center gap-3 rounded-xl px-4 text-left text-sm font-semibold transition",
     activeTab === "grades"
-      ? themeClasses.tabActive
-      : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
+      ? "bg-indigo-50 text-indigo-700"
+      : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950"
   )}
 >
-  <GraduationCap className="h-6 w-6" /> Grades
+  <GraduationCap className="h-5 w-5" /> Grades
 </button>
 
               <button
                 onClick={() => setActiveTab("settings")}
                 className={cn(
-                  "flex min-h-11 w-full items-center gap-3 rounded-xl px-4 py-4 text-left text-xl font-semibold transition",
+                  "mt-auto flex min-h-12 w-full items-center gap-3 rounded-xl border-t border-zinc-200 px-4 pt-4 text-left text-sm font-semibold transition",
                   activeTab === "settings"
-  ? themeClasses.tabActive
-  : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
+  ? "text-indigo-700"
+  : "text-zinc-600 hover:text-zinc-950"
                 )}
               >
-                <Settings className="h-6 w-6" /> Settings
+                <Settings className="h-5 w-5" /> Settings
               </button>
             </nav>
+            <button onClick={() => session ? handleLogout() : setGuestMode(false)} className="mt-4 flex min-h-14 items-center gap-3 rounded-2xl border border-zinc-200 p-3 text-left hover:bg-zinc-50">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-700">{(session?.user?.email ?? "G").charAt(0).toUpperCase()}</span>
+              <span className="min-w-0"><span className="block truncate text-sm font-semibold">{session?.user?.email?.split("@")[0] ?? "Guest mode"}</span><span className="block truncate text-xs text-zinc-500">{session?.user?.email ?? "Sign in to sync"}</span></span>
+            </button>
           </aside>
 
-          <main className="min-w-0">
+          <main className="desktop-app-main min-w-0 md:bg-[#fafafa] md:p-6 lg:p-8">
             {activeTab === "dashboard" && (
+              <>
               <MobileDashboard
                 nextClass={mobileDashboardData.nextClass}
                 dueToday={mobileDashboardData.dueToday}
@@ -2477,6 +2494,22 @@ if (authLoading) {
                   if (task) openEditTaskModal(task);
                 }}
               />
+              <DesktopDashboard
+                nextClass={mobileDashboardData.nextClass}
+                dueToday={mobileDashboardData.dueToday}
+                missing={mobileDashboardData.missing}
+                upcoming={mobileDashboardData.upcoming}
+                todayClasses={mobileDashboardData.todayClasses}
+                completedCount={stats.completed}
+                onTasks={() => setActiveTab("tasks")}
+                onSchedule={() => setActiveTab("schedule")}
+                onAddTask={openAddTaskModal}
+                onEditTask={(id) => {
+                  const task = tasks.find((item) => item.id === id);
+                  if (task) openEditTaskModal(task);
+                }}
+              />
+              </>
             )}
 
             {activeTab === "tasks" && (
@@ -2507,7 +2540,7 @@ if (authLoading) {
               />
             )}
 
-            {(activeTab === "dashboard" || activeTab === "tasks") && (
+            {activeTab === "tasks" && (
               <div className="hidden space-y-5 md:block">
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                   <StatCard
@@ -3359,7 +3392,21 @@ if (authLoading) {
               </div>
             )}
 {activeTab === "grades" && (
-  <div className="space-y-5">
+  <>
+  <MobileGradesPage
+    courses={courses}
+    overall={gradeStats.overall}
+    atGoal={gradeStats.atGoal}
+    onAddCourse={() => setShowCourseModal(true)}
+    onAddMark={() => {
+      setAssessmentForm((prev) => ({ ...prev, courseId: courses[0]?.id ? String(courses[0].id) : "" }));
+      setShowAssessmentModal(true);
+    }}
+    onGoalChange={updateCourseGoal}
+    onDeleteCourse={deleteCourse}
+    onDeleteAssessment={deleteAssessment}
+  />
+  <div className="hidden space-y-5 md:block">
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       <StatCard
   icon={<GraduationCap className="h-6 w-6 text-blue-500" />}
@@ -3578,6 +3625,7 @@ if (authLoading) {
       )}
     </section>
   </div>
+  </>
 )}
             {activeTab === "settings" && (
               <div className="space-y-5">
@@ -3774,26 +3822,7 @@ if (authLoading) {
   </div>
 )}
 {showCourseModal && (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-    <div className="w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl">
-      <div className="mb-5 flex items-center justify-between">
-        <div>
-          <h3 className="text-3xl font-semibold">Add Course</h3>
-          <p className="mt-1 text-zinc-500">
-            Create a course to track your estimated mark.
-          </p>
-        </div>
-        <button
-          onClick={() => {
-            setShowCourseModal(false);
-            setCourseForm(emptyCourseForm);
-          }}
-          className="rounded-full bg-zinc-100 p-2 text-zinc-600"
-        >
-          <X className="h-5 w-5" />
-        </button>
-      </div>
-
+  <MobileSheet open title="Add Course" description="Create a course to track your estimated mark." onClose={() => { setShowCourseModal(false); setCourseForm(emptyCourseForm); }} className="sm:max-w-xl">
       <div className="grid gap-4">
         <label className="space-y-2">
           <span className="text-sm font-medium text-zinc-600">Course Name</span>
@@ -3823,7 +3852,7 @@ if (authLoading) {
         </label>
       </div>
 
-      <div className="mt-6 flex justify-end gap-3">
+      <div className="sticky bottom-0 -mx-4 mt-6 flex flex-col-reverse gap-2 border-t border-zinc-200 bg-white px-4 pb-[max(0.25rem,env(safe-area-inset-bottom))] pt-4 sm:static sm:mx-0 sm:flex-row sm:justify-end sm:border-0 sm:p-0">
         <button
           onClick={() => {
             setShowCourseModal(false);
@@ -3840,30 +3869,10 @@ if (authLoading) {
           Add Course
         </button>
       </div>
-    </div>
-  </div>
+  </MobileSheet>
 )}
 {showAssessmentModal && (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-    <div className="w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl">
-      <div className="mb-5 flex items-center justify-between">
-        <div>
-          <h3 className="text-3xl font-semibold">Add Mark</h3>
-          <p className="mt-1 text-zinc-500">
-            Add a quiz, test, lab, assignment, or exam mark.
-          </p>
-        </div>
-        <button
-          onClick={() => {
-            setShowAssessmentModal(false);
-            setAssessmentForm(emptyAssessmentForm);
-          }}
-          className="rounded-full bg-zinc-100 p-2 text-zinc-600"
-        >
-          <X className="h-5 w-5" />
-        </button>
-      </div>
-
+  <MobileSheet open title="Add Mark" description="Add a quiz, test, lab, assignment, or exam mark." onClose={() => { setShowAssessmentModal(false); setAssessmentForm(emptyAssessmentForm); }} className="sm:max-w-xl">
       <div className="grid gap-4 md:grid-cols-2">
         <label className="space-y-2 md:col-span-2">
           <span className="text-sm font-medium text-zinc-600">Course</span>
@@ -3946,7 +3955,7 @@ if (authLoading) {
         </label>
       </div>
 
-      <div className="mt-6 flex justify-end gap-3">
+      <div className="sticky bottom-0 -mx-4 mt-6 flex flex-col-reverse gap-2 border-t border-zinc-200 bg-white px-4 pb-[max(0.25rem,env(safe-area-inset-bottom))] pt-4 sm:static sm:mx-0 sm:flex-row sm:justify-end sm:border-0 sm:p-0">
         <button
           onClick={() => {
             setShowAssessmentModal(false);
@@ -3963,8 +3972,7 @@ if (authLoading) {
           Save Mark
         </button>
       </div>
-    </div>
-  </div>
+  </MobileSheet>
 )}
 {showHowToUse && (
   <div className="fixed inset-0 z-50 bg-black/40 p-4 overflow-y-auto">
