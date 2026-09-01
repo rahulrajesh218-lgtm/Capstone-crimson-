@@ -19,6 +19,12 @@ body {
   background: #f7f7f8;
   overscroll-behavior-y: none;
   -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: rgba(99, 102, 241, 0.22);
 }
 
 button,
@@ -27,6 +33,22 @@ input,
 select,
 textarea {
   touch-action: manipulation;
+}
+
+button {
+  letter-spacing: -0.01em;
+}
+
+input,
+select,
+textarea {
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
 }
 
 :focus-visible {

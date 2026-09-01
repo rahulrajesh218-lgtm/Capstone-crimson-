@@ -38,12 +38,105 @@ Calculator,
 FolderKanban,
 Plug,
 Menu,
+Palette,
 } from "lucide-react";
 
 type TaskStatus = "upcoming" | "in-progress" | "completed";
 type Priority = "high" | "medium" | "low";
 type Tab = "dashboard" | "tasks" | "schedule" | "chat" | "planner" | "grades" | "settings";
 type Theme = "light" | "dark" | "forest" | "sunset" | "ocean" | "lavender" | "midnight" | "rose" | "slate";
+
+const themeDesigns: Record<Theme, {
+  name: string;
+  description: string;
+  page: string;
+  card: string;
+  primary: string;
+  badge: string;
+  swatches: readonly [string, string, string];
+}> = {
+  light: {
+    name: "Studio",
+    description: "Bright, calm, and focused",
+    page: "zentaskra-light bg-[radial-gradient(circle_at_top_left,_#eef2ff_0,_#f8fafc_38%,_#f4f4f5_100%)] text-zinc-950",
+    card: "border-white/80 bg-white/90 shadow-[0_12px_35px_rgba(15,23,42,0.06)] backdrop-blur-sm",
+    primary: "bg-indigo-600 text-white shadow-sm hover:bg-indigo-700",
+    badge: "border border-indigo-100 bg-indigo-50 text-indigo-700",
+    swatches: ["#4f46e5", "#e0e7ff", "#ffffff"],
+  },
+  dark: {
+    name: "Graphite",
+    description: "Clean contrast for late nights",
+    page: "zentaskra-dark bg-[radial-gradient(circle_at_top_left,_#182033_0,_#0b1020_42%,_#070a12_100%)] text-zinc-100",
+    card: "border-white/10 bg-[#111827]/90 shadow-[0_14px_40px_rgba(0,0,0,0.24)] backdrop-blur-sm",
+    primary: "bg-indigo-500 text-white shadow-sm hover:bg-indigo-400",
+    badge: "border border-white/10 bg-white/10 text-zinc-100",
+    swatches: ["#818cf8", "#1f2937", "#0b1020"],
+  },
+  forest: {
+    name: "Evergreen",
+    description: "Grounded greens and soft neutrals",
+    page: "zentaskra-forest bg-[radial-gradient(circle_at_top_left,_#d1fae5_0,_#f0fdf4_38%,_#f8fafc_100%)] text-emerald-950",
+    card: "border-emerald-100/80 bg-white/88 shadow-[0_12px_34px_rgba(6,78,59,0.08)] backdrop-blur-sm",
+    primary: "bg-emerald-700 text-white shadow-sm hover:bg-emerald-800",
+    badge: "border border-emerald-200 bg-emerald-50 text-emerald-800",
+    swatches: ["#047857", "#a7f3d0", "#f0fdf4"],
+  },
+  sunset: {
+    name: "Sienna",
+    description: "Warm, energetic, and refined",
+    page: "zentaskra-sunset bg-[radial-gradient(circle_at_top_left,_#ffedd5_0,_#fff7ed_42%,_#fafaf9_100%)] text-stone-950",
+    card: "border-orange-100 bg-white/88 shadow-[0_12px_34px_rgba(154,52,18,0.08)] backdrop-blur-sm",
+    primary: "bg-orange-600 text-white shadow-sm hover:bg-orange-700",
+    badge: "border border-orange-200 bg-orange-50 text-orange-800",
+    swatches: ["#ea580c", "#fed7aa", "#fff7ed"],
+  },
+  ocean: {
+    name: "Coastal",
+    description: "Clear blues with an airy finish",
+    page: "zentaskra-ocean bg-[radial-gradient(circle_at_top_left,_#cffafe_0,_#ecfeff_38%,_#f8fafc_100%)] text-slate-950",
+    card: "border-cyan-100 bg-white/88 shadow-[0_12px_34px_rgba(14,116,144,0.08)] backdrop-blur-sm",
+    primary: "bg-cyan-700 text-white shadow-sm hover:bg-cyan-800",
+    badge: "border border-cyan-200 bg-cyan-50 text-cyan-800",
+    swatches: ["#0e7490", "#a5f3fc", "#ecfeff"],
+  },
+  lavender: {
+    name: "Lavender",
+    description: "Soft violet with crisp details",
+    page: "zentaskra-lavender bg-[radial-gradient(circle_at_top_left,_#ede9fe_0,_#faf5ff_42%,_#fafafa_100%)] text-violet-950",
+    card: "border-violet-100 bg-white/88 shadow-[0_12px_34px_rgba(91,33,182,0.08)] backdrop-blur-sm",
+    primary: "bg-violet-700 text-white shadow-sm hover:bg-violet-800",
+    badge: "border border-violet-200 bg-violet-50 text-violet-800",
+    swatches: ["#6d28d9", "#ddd6fe", "#faf5ff"],
+  },
+  midnight: {
+    name: "Midnight",
+    description: "Deep indigo with a vivid accent",
+    page: "zentaskra-dark bg-[radial-gradient(circle_at_top_left,_#24265f_0,_#0f1235_40%,_#050617_100%)] text-indigo-50",
+    card: "border-indigo-400/15 bg-indigo-950/72 shadow-[0_14px_40px_rgba(0,0,0,0.3)] backdrop-blur-md",
+    primary: "bg-violet-500 text-white shadow-sm hover:bg-violet-400",
+    badge: "border border-indigo-300/15 bg-indigo-300/10 text-indigo-100",
+    swatches: ["#8b5cf6", "#312e81", "#050617"],
+  },
+  rose: {
+    name: "Rosewood",
+    description: "Warm rose without the noise",
+    page: "zentaskra-rose bg-[radial-gradient(circle_at_top_left,_#ffe4e6_0,_#fff1f2_40%,_#fafafa_100%)] text-rose-950",
+    card: "border-rose-100 bg-white/88 shadow-[0_12px_34px_rgba(159,18,57,0.08)] backdrop-blur-sm",
+    primary: "bg-rose-600 text-white shadow-sm hover:bg-rose-700",
+    badge: "border border-rose-200 bg-rose-50 text-rose-800",
+    swatches: ["#e11d48", "#fecdd3", "#fff1f2"],
+  },
+  slate: {
+    name: "Executive",
+    description: "Neutral, polished, and understated",
+    page: "zentaskra-slate bg-[radial-gradient(circle_at_top_left,_#e2e8f0_0,_#f1f5f9_42%,_#f8fafc_100%)] text-slate-950",
+    card: "border-slate-200/80 bg-white/90 shadow-[0_12px_34px_rgba(15,23,42,0.07)] backdrop-blur-sm",
+    primary: "bg-slate-800 text-white shadow-sm hover:bg-slate-900",
+    badge: "border border-slate-200 bg-slate-100 text-slate-700",
+    swatches: ["#334155", "#cbd5e1", "#f8fafc"],
+  },
+};
 
 type ReminderItem = {
   id: number;
@@ -2286,84 +2379,13 @@ const saveReminder = async () => {
   }
 };
 const showAuthGate = !session && !guestMode;
+const selectedTheme = themeDesigns[theme];
 const themeClasses = {
-  card:
-  theme === "dark"
-    ? "bg-zinc-900 border-zinc-700"
-    : theme === "forest"
-      ? "bg-emerald-100 border-emerald-300"
-      : theme === "sunset"
-        ? "bg-orange-100 border-orange-300"
-        : theme === "ocean"
-          ? "bg-cyan-100 border-cyan-300"
-          : theme === "lavender"
-            ? "bg-violet-100 border-violet-300"
-            : theme === "midnight"
-              ? "bg-indigo-950 border-indigo-700"
-              : theme === "rose"
-                ? "bg-rose-100 border-rose-300"
-                : theme === "slate"
-                  ? "bg-slate-200 border-slate-400"
-                  : "bg-white border-zinc-200",
-  page: cn(
-    "min-h-screen transition-colors",
-    theme === "dark"
-      ? "zentaskra-dark bg-[#0b1020] text-zinc-100"
-      : theme === "forest"
-        ? "zentaskra-forest bg-emerald-50 text-[#1a1a1a]"
-        : theme === "sunset"
-          ? "zentaskra-sunset bg-orange-50 text-[#1a1a1a]"
-          : theme === "ocean"
-            ? "zentaskra-ocean bg-cyan-50 text-[#10202a]"
-            : theme === "lavender"
-              ? "zentaskra-lavender bg-violet-50 text-[#1f1633]"
-              : theme === "midnight"
-                ? "zentaskra-dark bg-[#020617] text-zinc-100"
-                : theme === "rose"
-                  ? "zentaskra-rose bg-rose-50 text-[#2a1018]"
-                  : theme === "slate"
-                    ? "zentaskra-slate bg-slate-100 text-slate-950"
-                    : "bg-[#f7f7f8] text-[#1a1a1a]"
-  ),
-
-  tabActive:
-    theme === "forest"
-      ? "bg-emerald-700 text-white"
-      : theme === "sunset"
-        ? "bg-orange-500 text-white"
-        : theme === "ocean"
-          ? "bg-cyan-700 text-white"
-          : theme === "lavender"
-            ? "bg-violet-700 text-white"
-            : theme === "midnight"
-              ? "bg-indigo-700 text-white"
-              : theme === "rose"
-                ? "bg-rose-600 text-white"
-                : theme === "slate"
-                  ? "bg-slate-700 text-white"
-                  : "bg-[#02031c] text-white",
-
-  primaryButton:
-    theme === "forest"
-      ? "bg-emerald-700 text-white"
-      : theme === "sunset"
-        ? "bg-orange-500 text-white"
-        : theme === "ocean"
-          ? "bg-cyan-700 text-white"
-          : theme === "lavender"
-            ? "bg-violet-700 text-white"
-            : theme === "midnight"
-              ? "bg-indigo-700 text-white"
-              : theme === "rose"
-                ? "bg-rose-600 text-white"
-                : theme === "slate"
-                  ? "bg-slate-700 text-white"
-                  : "bg-[#02031c] text-white",
-
-  badge:
-    theme === "dark" || theme === "midnight"
-      ? "bg-zinc-800 text-zinc-100"
-      : "bg-white text-zinc-700 border border-zinc-200",
+  card: selectedTheme.card,
+  page: cn("min-h-screen bg-fixed transition-colors duration-300", selectedTheme.page),
+  tabActive: selectedTheme.primary,
+  primaryButton: cn("transition duration-200 active:scale-[0.98]", selectedTheme.primary),
+  badge: selectedTheme.badge,
 };
 if (authLoading) {
   return (
@@ -3714,30 +3736,51 @@ if (authLoading) {
                     </div>
                   </div>
 
-                  <div className="rounded-2xl border border-zinc-200 p-5">
+                  <div className="rounded-[28px] border border-white/60 bg-white/45 p-4 shadow-sm backdrop-blur-sm sm:p-6">
                     <div className="flex flex-col gap-4">
-                      <div>
-                        <h3 className="text-2xl font-semibold">Theme</h3>
+                      <div className="flex items-start gap-3">
+                        <div className={cn("rounded-2xl p-3", themeClasses.primaryButton)}>
+                          <Palette className="h-5 w-5" aria-hidden="true" />
+                        </div>
+                        <div>
+                        <h3 className="text-2xl font-semibold tracking-tight">Appearance</h3>
                         <p className="mt-1 text-zinc-500">
-                          Choose how Zentaskra looks.
+                          Pick a focused palette that feels right for you.
                         </p>
+                        </div>
                       </div>
 
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        {(["light", "dark", "forest", "sunset", "ocean", "lavender", "midnight", "rose", "slate"] as Theme[]).map((themeOption) => (
+                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                        {(Object.keys(themeDesigns) as Theme[]).map((themeOption) => {
+                          const design = themeDesigns[themeOption];
+                          const isSelected = theme === themeOption;
+                          return (
                           <button
                             key={themeOption}
                             onClick={() => setTheme(themeOption)}
+                            aria-pressed={isSelected}
                             className={cn(
-                              "rounded-xl border px-5 py-3 text-left text-lg font-semibold transition",
-                              theme === themeOption
-                                ? themeClasses.tabActive
-                                : "border-zinc-300 bg-white text-zinc-900"
+                              "group min-h-32 rounded-2xl border bg-white p-4 text-left text-zinc-900 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md",
+                              isSelected ? "border-indigo-500 ring-2 ring-indigo-500/20" : "border-zinc-200/80"
                             )}
                           >
-                   {themeOption.charAt(0).toUpperCase() + themeOption.slice(1)}
-</button>
-))}
+                            <span className="mb-5 flex items-center justify-between">
+                              <span className="flex gap-1.5" aria-hidden="true">
+                                {design.swatches.map((swatch) => (
+                                  <span
+                                    key={swatch}
+                                    className="h-7 w-7 rounded-full border border-black/10 shadow-sm"
+                                    style={{ backgroundColor: swatch }}
+                                  />
+                                ))}
+                              </span>
+                              {isSelected && <CheckCircle2 className="h-5 w-5 text-indigo-600" aria-label="Selected" />}
+                            </span>
+                            <span className="block text-lg font-semibold tracking-tight">{design.name}</span>
+                            <span className="mt-1 block text-sm font-medium text-zinc-500">{design.description}</span>
+                          </button>
+                          );
+                        })}
 </div>
 </div>
 </div>
