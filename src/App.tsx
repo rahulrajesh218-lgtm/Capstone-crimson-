@@ -854,6 +854,9 @@ const [guestMode, setGuestMode] = useState<boolean>(
 const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
@@ -1070,9 +1073,13 @@ useEffect(() => {
 
   const {
     data: { subscription },
-  } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+  } = supabase.auth.onAuthStateChange((event, nextSession) => {
     setSession(nextSession ?? null);
     setAuthLoading(false);
+    if (event === "PASSWORD_RECOVERY") {
+      setPasswordRecovery(true);
+      setAuthMessage("");
+    }
   });
 
   return () => {
@@ -1471,6 +1478,64 @@ const loadTasks = async (userId?: string) => {
   });
 
   setTasks(normalizeTasks(mappedTasks));
+};
+
+const handleForgotPassword = async () => {
+  const email = authEmail.trim();
+
+  if (!email) {
+    setAuthMessage("Enter your email address first.");
+    return;
+  }
+
+  try {
+    setAuthSubmitting(true);
+    setAuthMessage("");
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/`,
+    });
+
+    if (error) {
+      setAuthMessage(error.message);
+      return;
+    }
+
+    setAuthMessage("Password reset email sent. Check your inbox and spam folder.");
+  } finally {
+    setAuthSubmitting(false);
+  }
+};
+
+const handleUpdatePassword = async () => {
+  if (newPassword.length < 6) {
+    setAuthMessage("Your new password must be at least 6 characters.");
+    return;
+  }
+
+  if (newPassword !== confirmNewPassword) {
+    setAuthMessage("The passwords do not match.");
+    return;
+  }
+
+  try {
+    setAuthSubmitting(true);
+    setAuthMessage("");
+
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+
+    if (error) {
+      setAuthMessage(error.message);
+      return;
+    }
+
+    setNewPassword("");
+    setConfirmNewPassword("");
+    setPasswordRecovery(false);
+    setAuthMessage("Password updated successfully.");
+  } finally {
+    setAuthSubmitting(false);
+  }
 };
 
 const loadCategoriesAndSchedule = async (userId: string) => {
@@ -3719,7 +3784,7 @@ if (authLoading) {
           </main>
         </div>
       </div>
-      {showAuthGate && (
+      {(showAuthGate || passwordRecovery) && (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
     <div className="max-h-[100dvh] w-full max-w-md overflow-y-auto rounded-3xl border border-zinc-200 bg-white p-5 shadow-2xl sm:p-8">
       <div className="text-center">
@@ -3734,10 +3799,57 @@ if (authLoading) {
   </h1>
 </div>
         <p className="mt-2 text-zinc-500">
-          Sign in to sync across devices, or continue as a guest on this device.
+          {passwordRecovery
+            ? "Choose a new password for your Zentaskra account."
+            : "Sign in to sync across devices, or continue as a guest on this device."}
         </p>
       </div>
 
+      {passwordRecovery ? (
+        <div className="mt-8 space-y-4">
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-zinc-600">New password</span>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="At least 6 characters"
+              autoComplete="new-password"
+              className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none"
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-zinc-600">Confirm new password</span>
+            <input
+              type="password"
+              value={confirmNewPassword}
+              onChange={(e) => setConfirmNewPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleUpdatePassword();
+              }}
+              placeholder="Enter it again"
+              autoComplete="new-password"
+              className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none"
+            />
+          </label>
+
+          {authMessage ? (
+            <div className="rounded-xl bg-zinc-100 px-4 py-3 text-sm text-zinc-700">
+              {authMessage}
+            </div>
+          ) : null}
+
+          <button
+            onClick={handleUpdatePassword}
+            disabled={authSubmitting}
+            className="w-full rounded-xl bg-[#02031c] px-5 py-3 text-lg font-semibold text-white disabled:opacity-60"
+          >
+            {authSubmitting ? "Updating password..." : "Update Password"}
+          </button>
+        </div>
+      ) : (
+      <>
       <div className="mt-8 grid grid-cols-2 gap-3">
         <button
           onClick={() => {
@@ -3799,6 +3911,17 @@ if (authLoading) {
           />
         </label>
 
+        {authMode === "login" ? (
+          <button
+            type="button"
+            onClick={handleForgotPassword}
+            disabled={authSubmitting}
+            className="min-h-11 w-full text-right text-sm font-semibold text-indigo-600 disabled:opacity-60"
+          >
+            Forgot password?
+          </button>
+        ) : null}
+
         {authMessage ? (
           <div className="rounded-xl bg-zinc-100 px-4 py-3 text-sm text-zinc-700">
             {authMessage}
@@ -3829,6 +3952,8 @@ if (authLoading) {
           Continue as Guest
         </button>
       </div>
+      </>
+      )}
     </div>
   </div>
 )}
