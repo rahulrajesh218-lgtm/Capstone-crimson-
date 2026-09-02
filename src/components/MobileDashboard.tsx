@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, Clock3, MapPin, Plus } from "lucide-react";
+import { AlertTriangle, ArrowRight, Brain, CalendarDays, CheckCircle2, Clock3, MapPin, MessageSquare, Plus } from "lucide-react";
 
 export type MobileDashboardTask = {
   id: number;
@@ -25,6 +25,8 @@ type Props = {
   onSchedule: () => void;
   onAddTask: () => void;
   onEditTask: (id: number) => void;
+  onChat: () => void;
+  onPlanner: () => void;
 };
 
 function CompactTask({ task, tone, onEdit }: { task: MobileDashboardTask; tone: "normal" | "missing"; onEdit: () => void }) {
@@ -44,7 +46,7 @@ function CompactTask({ task, tone, onEdit }: { task: MobileDashboardTask; tone: 
     </button>
   );
 }
-export function MobileDashboard({ nextClass, dueToday, missing, upcoming, completedCount, onTasks, onSchedule, onAddTask, onEditTask }: Props) {
+export function MobileDashboard({ nextClass, dueToday, missing, upcoming, completedCount, onTasks, onSchedule, onAddTask, onEditTask, onChat, onPlanner }: Props) {
   const todayLabel = new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
 
   return (
@@ -81,6 +83,22 @@ export function MobileDashboard({ nextClass, dueToday, missing, upcoming, comple
         <button onClick={onAddTask} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 font-semibold text-white"><Plus className="h-5 w-5" />Add task</button>
         <button onClick={onTasks} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-zinc-300 bg-white px-4 font-semibold text-zinc-800">View tasks<ArrowRight className="h-4 w-4" /></button>
       </div>
+
+      <section>
+        <h3 className="mb-3 text-lg font-semibold">Study tools</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <button onClick={onPlanner} className="min-h-24 rounded-2xl border border-indigo-100 bg-indigo-50 p-4 text-left active:scale-[0.99]">
+            <Brain className="h-5 w-5 text-indigo-700" />
+            <span className="mt-3 block font-semibold text-zinc-950">Study Planner</span>
+            <span className="mt-1 block text-xs text-zinc-500">Plan what to study next</span>
+          </button>
+          <button onClick={onChat} className="min-h-24 rounded-2xl border border-violet-100 bg-violet-50 p-4 text-left active:scale-[0.99]">
+            <MessageSquare className="h-5 w-5 text-violet-700" />
+            <span className="mt-3 block font-semibold text-zinc-950">AI Chat</span>
+            <span className="mt-1 block text-xs text-zinc-500">Get focused study help</span>
+          </button>
+        </div>
+      </section>
 
       <section>
         <div className="mb-3 flex items-center justify-between"><h3 className="flex items-center gap-2 text-lg font-semibold"><Clock3 className="h-5 w-5 text-indigo-600" />Due today</h3><button onClick={onTasks} className="min-h-11 px-2 text-sm font-semibold text-indigo-700">See all</button></div>

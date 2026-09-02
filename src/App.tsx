@@ -5,15 +5,23 @@ import { supabase } from "./lib/supabase";
 import { CategoryManager } from "./components/CategoryManager";
 import { DesktopDashboard } from "./components/DesktopDashboard";
 import { InstallAppCard } from "./components/InstallAppCard";
+import { NotificationCenter } from "./components/NotificationCenter";
+import { NotificationSettings } from "./components/NotificationSettings";
+import { ProductivityProgress } from "./components/ProductivityProgress";
+import { Leaderboard, type LeaderboardRow } from "./components/Leaderboard";
 import { MobileBottomNav } from "./components/MobileBottomNav";
 import { MobileDashboard } from "./components/MobileDashboard";
 import { MobileGradesPage } from "./components/MobileGradesPage";
 import { MobileSheet } from "./components/MobileSheet";
 import { MobileTasksPage } from "./components/MobileTasksPage";
 import { SchedulePage } from "./components/SchedulePage";
+import { StudyPlanner } from "./components/StudyPlanner";
 import { blackbaudScheduleProvider } from "./features/schedule/providers";
 import type { ScheduleMeeting } from "./features/schedule/types";
 import { categoryBadgeClass, type TaskCategory } from "./features/tasks/categories";
+import { deriveNotifications } from "./features/notifications/derive";
+import { defaultNotificationPreferences, type AppNotification, type NotificationPreferences } from "./features/notifications/types";
+import { calculateProgress, type XpEvent } from "./features/gamification/progress";
 import { usePwaInstall } from "./pwa";
 import {
   LayoutGrid,
@@ -26,7 +34,6 @@ import {
   Send,
   Sparkles,
   Plus,
-  Target,
   Trash2,
   Bell,
   Settings,
@@ -39,11 +46,12 @@ FolderKanban,
 Plug,
 Menu,
 Palette,
+Trophy,
 } from "lucide-react";
 
 type TaskStatus = "upcoming" | "in-progress" | "completed";
 type Priority = "high" | "medium" | "low";
-type Tab = "dashboard" | "tasks" | "schedule" | "chat" | "planner" | "grades" | "settings";
+type Tab = "dashboard" | "tasks" | "schedule" | "chat" | "planner" | "grades" | "leaderboard" | "settings";
 type Theme = "light" | "dark" | "forest" | "sunset" | "ocean" | "lavender" | "midnight" | "rose" | "slate";
 
 const themeDesigns: Record<Theme, {
@@ -169,6 +177,8 @@ type StudySession = {
   topic: string;
   time: string;
   duration: number;
+  sourceTaskId?: number;
+  completedAt?: string;
 };
 
 type Goal = {
@@ -266,6 +276,10 @@ const STORAGE_KEYS = {
   grades: "zentaskra_grades_v1",
   categories: "zentaskra_categories_v1",
   schedule: "zentaskra_schedule_v1",
+  notificationStates: "zentaskra_notification_states_v1",
+  notificationPreferences: "zentaskra_notification_preferences_v1",
+  browserNotificationsSent: "zentaskra_browser_notifications_sent_v1",
+  xpEvents: "zentaskra_xp_events_v1",
 };
 
 const progressSteps = [0, 25, 50, 75, 100];
@@ -436,6 +450,11 @@ function addMinutes(time: string, duration: number) {
   const hh = String(date.getHours()).padStart(2, "0");
   const mm = String(date.getMinutes()).padStart(2, "0");
   return `${hh}:${mm}`;
+}
+
+function localTimeMinutes(time: string) {
+  const [hours, minutes] = time.split(":").map(Number);
+  return (hours || 0) * 60 + (minutes || 0);
 }
 
 function startOfDay(date: Date) {
@@ -959,6 +978,9 @@ const [tasks, setTasks] = useState<Task[]>(
   const [sessions, setSessions] = useState<StudySession[]>(
     () => readStorage(STORAGE_KEYS.sessions, defaultSessions)
   );
+  const [xpEvents, setXpEvents] = useState<XpEvent[]>(
+    () => readStorage(STORAGE_KEYS.xpEvents, [] as XpEvent[])
+  );
   const [goals, setGoals] = useState<Goal[]>(
     () => readStorage(STORAGE_KEYS.goals, defaultGoals)
   );
@@ -991,10 +1013,21 @@ const [scheduleError, setScheduleError] = useState("");
 const [showCategoryManager, setShowCategoryManager] = useState(false);
 const [categoryFilter, setCategoryFilter] = useState("all");
 const [showMobileMore, setShowMobileMore] = useState(false);
+const [showNotifications, setShowNotifications] = useState(false);
+const [notificationStates, setNotificationStates] = useState<Record<string, { read: boolean; dismissed: boolean }>>(
+  () => readStorage(STORAGE_KEYS.notificationStates, {})
+);
+const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(
+  () => readStorage(STORAGE_KEYS.notificationPreferences, defaultNotificationPreferences)
+);
+const [notificationClock, setNotificationClock] = useState(() => Date.now());
+const [leaderboardRows, setLeaderboardRows] = useState<LeaderboardRow[]>([]);
+const [publicDisplayName, setPublicDisplayName] = useState("");
+const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+const [leaderboardError, setLeaderboardError] = useState("");
 
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
-  const [newGoal, setNewGoal] = useState("");
   const [selectedTaskId, setSelectedTaskId] = useState<number>(0);
   const [reminderInput, setReminderInput] = useState("");
     const [uploadedStudyFile, setUploadedStudyFile] = useState<UploadedStudyFile | null>(null);
@@ -1003,6 +1036,7 @@ const [showMobileMore, setShowMobileMore] = useState(false);
 
 
   const [showSessionModal, setShowSessionModal] = useState(false);
+  const [editingSessionId, setEditingSessionId] = useState<number | null>(null);
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [showHowToUse, setShowHowToUse] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
@@ -1091,8 +1125,12 @@ const [showMobileMore, setShowMobileMore] = useState(false);
 
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEYS.sessions, JSON.stringify(sessions));
-  }, [sessions]);
+    if (!session?.user) window.localStorage.setItem(STORAGE_KEYS.sessions, JSON.stringify(sessions));
+  }, [session, sessions]);
+
+  useEffect(() => {
+    if (!session?.user) window.localStorage.setItem(STORAGE_KEYS.xpEvents, JSON.stringify(xpEvents));
+  }, [session, xpEvents]);
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEYS.goals, JSON.stringify(goals));
@@ -1132,6 +1170,18 @@ useEffect(() => {
     window.localStorage.setItem(STORAGE_KEYS.schedule, JSON.stringify(scheduleMeetings));
   }
 }, [scheduleMeetings, session]);
+
+useEffect(() => {
+  const timer = window.setInterval(() => setNotificationClock(Date.now()), 60_000);
+  return () => window.clearInterval(timer);
+}, []);
+
+useEffect(() => {
+  if (!session?.user) {
+    window.localStorage.setItem(STORAGE_KEYS.notificationStates, JSON.stringify(notificationStates));
+    window.localStorage.setItem(STORAGE_KEYS.notificationPreferences, JSON.stringify(notificationPreferences));
+  }
+}, [notificationPreferences, notificationStates, session]);
 
 useEffect(() => {
   let mounted = true;
@@ -1187,11 +1237,20 @@ useEffect(() => {
   if (session?.user?.id) {
     loadTasks(session.user.id);
     loadCategoriesAndSchedule(session.user.id);
+    loadNotificationData(session.user.id);
+    loadProductivityData(session.user.id);
+    loadLeaderboard();
   } else {
     const localTasks = readStorage(STORAGE_KEYS.tasks, [] as Task[]);
     setTasks(normalizeTasks(localTasks));
     setCategories(readStorage(STORAGE_KEYS.categories, [] as TaskCategory[]));
     setScheduleMeetings(readStorage(STORAGE_KEYS.schedule, [] as ScheduleMeeting[]));
+    setNotificationStates(readStorage(STORAGE_KEYS.notificationStates, {}));
+    setNotificationPreferences(readStorage(STORAGE_KEYS.notificationPreferences, defaultNotificationPreferences));
+    setSessions(readStorage(STORAGE_KEYS.sessions, defaultSessions));
+    setXpEvents(readStorage(STORAGE_KEYS.xpEvents, [] as XpEvent[]));
+    setLeaderboardRows([]);
+    setPublicDisplayName("");
     setScheduleError("");
   }
 // Authentication changes are the intentional reload boundary for remote data.
@@ -1287,6 +1346,25 @@ useEffect(() => {
     missing: task.progress < 100 && getDueDateTime(task).getTime() < Date.now(),
   })), [activeTasks]);
 
+  const notifications = useMemo(
+    () => deriveNotifications(tasks, scheduleMeetings, notificationPreferences, notificationStates, new Date(notificationClock)),
+    [notificationClock, notificationPreferences, notificationStates, scheduleMeetings, tasks]
+  );
+  const unreadNotificationCount = notifications.filter((notification) => !notification.read).length;
+
+  useEffect(() => {
+    if (!notificationPreferences.browserEnabled || typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    const owner = session?.user?.id ?? "guest";
+    const storageKey = `${STORAGE_KEYS.browserNotificationsSent}:${owner}`;
+    const sent = new Set(readStorage<string[]>(storageKey, []));
+    const unsent = notifications.filter((notification) => !notification.read && !sent.has(notification.id)).slice(0, 3);
+    unsent.forEach((notification) => {
+      new Notification(notification.title, { body: notification.body, icon: "/icons/pwa-192.png", tag: notification.id });
+      sent.add(notification.id);
+    });
+    if (unsent.length) window.localStorage.setItem(storageKey, JSON.stringify(Array.from(sent).slice(-100)));
+  }, [notificationPreferences.browserEnabled, notifications, session]);
+
   const archivedTasks = useMemo(
     () => tasks.filter((task) => task.archived),
     [tasks]
@@ -1345,7 +1423,7 @@ useEffect(() => {
     };
   }, [sessions, goals]);
 
-  const completionStreak = useMemo(() => calculateCompletionStreak(tasks), [tasks]);
+  const productivityProgress = useMemo(() => calculateProgress(xpEvents), [xpEvents]);
 const gradeStats = useMemo(() => {
   const averages = courses
     .map((course) => getCourseAverage(course))
@@ -1573,6 +1651,130 @@ const loadTasks = async (userId?: string) => {
   setTasks(normalizeTasks(mappedTasks));
 };
 
+const loadNotificationData = async (userId: string) => {
+  const [stateResult, preferenceResult] = await Promise.all([
+    supabase.from("notification_states").select("id,is_read,dismissed").eq("user_id", userId),
+    supabase.from("notification_preferences").select("*").eq("user_id", userId).maybeSingle(),
+  ]);
+  if (!stateResult.error) {
+    const nextStates: Record<string, { read: boolean; dismissed: boolean }> = {};
+    (stateResult.data ?? []).forEach((item) => { nextStates[item.id] = { read: Boolean(item.is_read), dismissed: Boolean(item.dismissed) }; });
+    setNotificationStates(nextStates);
+  } else {
+    console.error("Error loading notification state:", stateResult.error.message);
+  }
+  if (!preferenceResult.error && preferenceResult.data) {
+    setNotificationPreferences({
+      browserEnabled: Boolean(preferenceResult.data.browser_enabled),
+      dueToday: Boolean(preferenceResult.data.due_today),
+      dueTomorrow: Boolean(preferenceResult.data.due_tomorrow),
+      overdue: Boolean(preferenceResult.data.overdue),
+      classReminders: Boolean(preferenceResult.data.class_reminders),
+      classReminderMinutes: Number(preferenceResult.data.class_reminder_minutes) || 10,
+    });
+  } else if (preferenceResult.error) {
+    console.error("Error loading notification preferences:", preferenceResult.error.message);
+  }
+};
+
+const loadProductivityData = async (userId: string) => {
+  const [sessionResult, xpResult] = await Promise.all([
+    supabase.from("study_sessions").select("*").eq("user_id", userId).order("start_time"),
+    supabase.from("xp_events").select("event_key,event_type,xp,occurred_on").eq("user_id", userId).order("created_at"),
+  ]);
+  if (!sessionResult.error) {
+    setSessions((sessionResult.data ?? []).map((item) => ({ id: Number(item.id), day: item.day, subject: item.subject, topic: item.topic, time: String(item.start_time).slice(0, 5), duration: Number(item.duration_minutes), sourceTaskId: item.source_task_id ? Number(item.source_task_id) : undefined, completedAt: item.completed_at ?? undefined })));
+  } else console.error("Error loading study sessions:", sessionResult.error.message);
+  if (!xpResult.error) {
+    setXpEvents((xpResult.data ?? []).map((item) => ({ eventKey: item.event_key, eventType: item.event_type, xp: Number(item.xp), occurredOn: item.occurred_on })));
+  } else console.error("Error loading XP:", xpResult.error.message);
+};
+
+const loadLeaderboard = async (period: "weekly" | "all-time" = "weekly") => {
+  if (!session?.user) { setLeaderboardRows([]); return; }
+  setLeaderboardLoading(true);
+  setLeaderboardError("");
+  const profileResult = await supabase.rpc("ensure_public_profile");
+  if (profileResult.error) {
+    setLeaderboardError("Leaderboard setup is not available yet. Apply the included migration.");
+    console.error("Error ensuring public profile:", profileResult.error.message);
+    setLeaderboardLoading(false);
+    return;
+  }
+  setPublicDisplayName(String(profileResult.data ?? ""));
+  const { data, error } = await supabase.rpc("get_leaderboard", { period, result_limit: 25 });
+  if (error) {
+    setLeaderboardError("The leaderboard could not be loaded.");
+    console.error("Error loading leaderboard:", error.message);
+  } else {
+    setLeaderboardRows((data ?? []).map((row: Record<string, unknown>) => ({ rank: Number(row.rank), displayName: String(row.display_name), level: Number(row.level), weeklyXp: Number(row.weekly_xp), lifetimeXp: Number(row.lifetime_xp), isCurrentUser: Boolean(row.is_current_user) })));
+  }
+  setLeaderboardLoading(false);
+};
+
+const savePublicDisplayName = async (name: string) => {
+  if (!session?.user) return;
+  const cleanName = name.trim();
+  if (cleanName.length < 3) return;
+  const { error } = await supabase.from("public_profiles").upsert({ user_id: session.user.id, display_name: cleanName, updated_at: new Date().toISOString() });
+  if (error) { setLeaderboardError(error.code === "23505" ? "That display name is already taken." : error.message); return; }
+  setPublicDisplayName(cleanName);
+  await loadLeaderboard();
+};
+
+const saveNotificationPreferences = async (next: NotificationPreferences) => {
+  setNotificationPreferences(next);
+  if (!session?.user) return;
+  const { error } = await supabase.from("notification_preferences").upsert({
+    user_id: session.user.id,
+    browser_enabled: next.browserEnabled,
+    due_today: next.dueToday,
+    due_tomorrow: next.dueTomorrow,
+    overdue: next.overdue,
+    class_reminders: next.classReminders,
+    class_reminder_minutes: next.classReminderMinutes,
+    updated_at: new Date().toISOString(),
+  });
+  if (error) console.error("Error saving notification preferences:", error.message);
+};
+
+const enableBrowserNotifications = async () => {
+  if (typeof Notification === "undefined" || Notification.permission === "denied") return;
+  const permission = await Notification.requestPermission();
+  await saveNotificationPreferences({ ...notificationPreferences, browserEnabled: permission === "granted" });
+};
+
+const updateNotificationState = async (id: string, patch: Partial<{ read: boolean; dismissed: boolean }>) => {
+  const next = { read: notificationStates[id]?.read ?? false, dismissed: notificationStates[id]?.dismissed ?? false, ...patch };
+  setNotificationStates((current) => ({ ...current, [id]: next }));
+  if (!session?.user) return;
+  const { error } = await supabase.from("notification_states").upsert({
+    id, user_id: session.user.id, is_read: next.read, dismissed: next.dismissed, updated_at: new Date().toISOString(),
+  });
+  if (error) console.error("Error saving notification state:", error.message);
+};
+
+const markAllNotificationsRead = async () => {
+  const nextStates = { ...notificationStates };
+  notifications.forEach((notification) => { nextStates[notification.id] = { read: true, dismissed: false }; });
+  setNotificationStates(nextStates);
+  if (!session?.user || notifications.length === 0) return;
+  const { error } = await supabase.from("notification_states").upsert(notifications.map((notification) => ({
+    id: notification.id, user_id: session.user.id, is_read: true, dismissed: false, updated_at: new Date().toISOString(),
+  })));
+  if (error) console.error("Error marking notifications read:", error.message);
+};
+
+const openNotification = (notification: AppNotification) => {
+  void updateNotificationState(notification.id, { read: true });
+  setShowNotifications(false);
+  setActiveTab(notification.target);
+  if (notification.target === "tasks" && notification.entityId) {
+    const task = tasks.find((item) => String(item.id) === notification.entityId);
+    if (task) openEditTaskModal(task);
+  }
+};
+
 const handleForgotPassword = async () => {
   const email = authEmail.trim();
 
@@ -1770,6 +1972,7 @@ const deleteScheduleMeeting = async (meeting: ScheduleMeeting) => {
 
 const updateTaskProgress = async (id: number, value: number) => {
   const snapped = snapProgress(value);
+  const previousTask = tasks.find((task) => task.id === id);
 
   if (!session?.user) {
     setTasks((prev) =>
@@ -1785,6 +1988,11 @@ const updateTaskProgress = async (id: number, value: number) => {
         )
       )
     );
+    if (snapped >= 100 && previousTask && previousTask.progress < 100) {
+      const additions: XpEvent[] = [{ eventKey: `assignment-completed:${id}`, eventType: "assignment_completed", xp: 20, occurredOn: getLocalDateKey() }];
+      if (getDueDateTime(previousTask).getTime() > Date.now()) additions.push({ eventKey: `assignment-early:${id}`, eventType: "assignment_early", xp: 5, occurredOn: getLocalDateKey() });
+      setXpEvents((current) => [...current, ...additions.filter((event) => !current.some((item) => item.eventKey === event.eventKey))]);
+    }
     return;
   }
 
@@ -1802,10 +2010,10 @@ const updateTaskProgress = async (id: number, value: number) => {
     return;
   }
 
-  await loadTasks();
+  await Promise.all([loadTasks(), loadProductivityData(session.user.id)]);
 };
 
-  const addManualSession = () => {
+  const addManualSession = async () => {
     const subject = sessionForm.subject.trim();
     const topic = sessionForm.topic.trim();
     const duration = Number(sessionForm.duration);
@@ -1815,7 +2023,7 @@ const updateTaskProgress = async (id: number, value: number) => {
     }
 
     const newSession: StudySession = {
-      id: Date.now(),
+      id: editingSessionId ?? Date.now(),
       subject,
       topic,
       day: sessionForm.day,
@@ -1823,9 +2031,85 @@ const updateTaskProgress = async (id: number, value: number) => {
       duration,
     };
 
-    setSessions((prev) => [...prev, newSession]);
+    if (session?.user) {
+      const existing = sessions.find((item) => item.id === editingSessionId);
+      const { error } = await supabase.from("study_sessions").upsert({ id: newSession.id, user_id: session.user.id, day: sessionForm.day, subject, topic, start_time: sessionForm.time, duration_minutes: duration, source_task_id: existing?.sourceTaskId ?? null, completed_at: existing?.completedAt ?? null, updated_at: new Date().toISOString() });
+      if (error) { console.error("Error saving study session:", error.message); return; }
+      await loadProductivityData(session.user.id);
+    } else {
+      setSessions((prev) => editingSessionId === null ? [...prev, newSession] : prev.map((item) => item.id === editingSessionId ? { ...item, ...newSession } : item));
+    }
     setSessionForm(emptySessionForm);
+    setEditingSessionId(null);
     setShowSessionModal(false);
+  };
+
+  const openAddSession = () => {
+    setEditingSessionId(null);
+    setSessionForm({ ...emptySessionForm, day: new Date().toLocaleDateString("en-US", { weekday: "long" }) });
+    setShowSessionModal(true);
+  };
+
+  const openEditSession = (studySession: StudySession) => {
+    setEditingSessionId(studySession.id);
+    setSessionForm({ subject: studySession.subject, topic: studySession.topic, day: studySession.day, time: studySession.time, duration: String(studySession.duration) });
+    setShowSessionModal(true);
+  };
+
+  const generateTodayStudyPlan = async (availableMinutes: number) => {
+    const now = new Date();
+    const day = now.toLocaleDateString("en-US", { weekday: "long" });
+    const existingTaskIds = new Set(sessions.filter((item) => item.day === day && item.sourceTaskId).map((item) => item.sourceTaskId));
+    const candidates = activeTasks.filter((task) => task.progress < 100 && !existingTaskIds.has(task.id)).sort((a, b) => {
+      const aOverdue = getDueDateTime(a).getTime() < now.getTime() ? 0 : 1;
+      const bOverdue = getDueDateTime(b).getTime() < now.getTime() ? 0 : 1;
+      return aOverdue - bOverdue || getDueDateTime(a).getTime() - getDueDateTime(b).getTime() || ({ high: 0, medium: 1, low: 2 }[a.priority] - { high: 0, medium: 1, low: 2 }[b.priority]);
+    });
+    const cursor = new Date(now);
+    cursor.setSeconds(0, 0);
+    cursor.setMinutes(Math.ceil(cursor.getMinutes() / 15) * 15);
+    if (cursor.getHours() < 16) cursor.setHours(16, 0, 0, 0);
+    const classBlocks = scheduleMeetings.filter((meeting) => meeting.days.includes(day)).map((meeting) => ({ start: localTimeMinutes(meeting.startTime), end: localTimeMinutes(meeting.endTime) }));
+    const generated: StudySession[] = [];
+    let remaining = availableMinutes;
+    for (const task of candidates) {
+      if (remaining < 20) break;
+      let duration = task.priority === "high" ? 45 : task.priority === "medium" ? 35 : 25;
+      duration = Math.min(duration, remaining);
+      let startMinutes = cursor.getHours() * 60 + cursor.getMinutes();
+      const conflict = classBlocks.find((block) => startMinutes < block.end && startMinutes + duration > block.start);
+      if (conflict) { startMinutes = conflict.end + 10; cursor.setHours(Math.floor(startMinutes / 60), startMinutes % 60, 0, 0); }
+      generated.push({ id: Date.now() + generated.length, day, subject: task.subject || "Study", topic: task.title, time: `${String(cursor.getHours()).padStart(2, "0")}:${String(cursor.getMinutes()).padStart(2, "0")}`, duration, sourceTaskId: task.id });
+      remaining -= duration;
+      cursor.setMinutes(cursor.getMinutes() + duration + 10);
+    }
+    if (session?.user && generated.length) {
+      const { error } = await supabase.from("study_sessions").insert(generated.map((item) => ({ id: item.id, user_id: session.user.id, day: item.day, subject: item.subject, topic: item.topic, start_time: item.time, duration_minutes: item.duration, source_task_id: item.sourceTaskId ?? null })));
+      if (error) { console.error("Error generating study plan:", error.message); return; }
+      await loadProductivityData(session.user.id);
+    } else setSessions((current) => [...current, ...generated]);
+  };
+
+  const toggleStudySessionComplete = async (id: number) => {
+    const studySession = sessions.find((item) => item.id === id);
+    if (!studySession) return;
+    const completedAt = studySession.completedAt ? null : new Date().toISOString();
+    if (session?.user) {
+      const { error } = await supabase.from("study_sessions").update({ completed_at: completedAt, updated_at: new Date().toISOString() }).eq("id", id).eq("user_id", session.user.id);
+      if (error) { console.error("Error completing study session:", error.message); return; }
+      await loadProductivityData(session.user.id);
+    } else {
+      setSessions((current) => current.map((item) => item.id === id ? { ...item, completedAt: completedAt ?? undefined } : item));
+      if (completedAt) setXpEvents((current) => current.some((event) => event.eventKey === `study-session:${id}`) ? current : [...current, { eventKey: `study-session:${id}`, eventType: "study_session_completed", xp: 10, occurredOn: getLocalDateKey() }]);
+    }
+  };
+
+  const deleteStudySession = async (id: number) => {
+    if (session?.user) {
+      const { error } = await supabase.from("study_sessions").delete().eq("id", id).eq("user_id", session.user.id);
+      if (error) { console.error("Error deleting study session:", error.message); return; }
+      await loadProductivityData(session.user.id);
+    } else setSessions((current) => current.filter((item) => item.id !== id));
   };
 
   const openAddTaskModal = () => {
@@ -1996,6 +2280,8 @@ const deleteTask = async (id: number) => {
 const completeTask = async (id: number) => {
   const confirmed = window.confirm("Are you sure you're done with this task?");
   if (!confirmed) return;
+  const taskToComplete = tasks.find((task) => task.id === id);
+  if (!taskToComplete || taskToComplete.progress >= 100) return;
 
   if (!session?.user) {
     setTasks((prev) =>
@@ -2013,6 +2299,12 @@ const completeTask = async (id: number) => {
         )
       )
     );
+    const today = getLocalDateKey();
+    setXpEvents((current) => {
+      const additions: XpEvent[] = [{ eventKey: `assignment-completed:${id}`, eventType: "assignment_completed", xp: 20, occurredOn: today }];
+      if (getDueDateTime(taskToComplete).getTime() > Date.now()) additions.push({ eventKey: `assignment-early:${id}`, eventType: "assignment_early", xp: 5, occurredOn: today });
+      return [...current, ...additions.filter((event) => !current.some((item) => item.eventKey === event.eventKey))];
+    });
 
     if (selectedTaskId === id) {
       setSelectedTaskId(0);
@@ -2038,7 +2330,7 @@ const completeTask = async (id: number) => {
     return;
   }
 
-  await loadTasks();
+  await Promise.all([loadTasks(), loadProductivityData(session.user.id)]);
 
   if (selectedTaskId === id) {
     setSelectedTaskId(0);
@@ -2131,7 +2423,7 @@ const unarchiveTask = async (id: number) => {
     return;
   }
 
-  await loadTasks();
+  await Promise.all([loadTasks(), loadProductivityData(session.user.id)]);
 };
 
 const saveReminder = async () => {
@@ -2174,19 +2466,6 @@ const saveReminder = async () => {
   setReminderInput("");
   await loadTasks();
 };
-
-  const startStudyPlanFlow = () => {
-    setActiveTab("chat");
-    setStudyPlanFlow(defaultStudyPlanFlow);
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: Date.now(),
-        role: "assistant",
-        text: "Ready. I'll use your real deadlines, priorities, and progress to draft a study plan, revise it with you, and save it to your Weekly Study Schedule once you confirm.",
-      },
-    ]);
-  };
 
   const saveDraftToSchedule = (draft: StudyPlanDraftItem[]) => {
     const generated: StudySession[] = draft.map((item, index) => ({
@@ -2437,7 +2716,10 @@ if (authLoading) {
             <img src="/icons/pwa-192.png" alt="" className="h-10 w-10 shrink-0 rounded-xl" />
             <div className="min-w-0"><p className="truncate text-lg font-semibold">Zentaskra</p><p className="truncate text-xs text-zinc-500">{session?.user?.email ?? "Guest mode"}</p></div>
           </button>
-          <button onClick={() => setShowMobileMore(true)} className="min-h-11 min-w-11 rounded-xl border border-zinc-200 bg-white p-2 text-zinc-700" aria-label="Open More menu"><Menu className="mx-auto h-5 w-5" /></button>
+          <div className="flex gap-2">
+            <button onClick={() => setShowNotifications(true)} className="relative min-h-11 min-w-11 rounded-xl border border-zinc-200 bg-white p-2 text-zinc-700" aria-label={`Open notifications${unreadNotificationCount ? `, ${unreadNotificationCount} unread` : ""}`}><Bell className="mx-auto h-5 w-5" />{unreadNotificationCount > 0 && <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">{Math.min(unreadNotificationCount, 99)}</span>}</button>
+            <button onClick={() => setShowMobileMore(true)} className="min-h-11 min-w-11 rounded-xl border border-zinc-200 bg-white p-2 text-zinc-700" aria-label="Open More menu"><Menu className="mx-auto h-5 w-5" /></button>
+          </div>
         </div>
 
         <div className="hidden">
@@ -2490,10 +2772,13 @@ if (authLoading) {
 
         <div className="desktop-app-shell grid grid-cols-1 gap-5 md:grid-cols-[280px_minmax(0,1fr)] md:gap-0 md:overflow-hidden md:rounded-[32px] md:border md:border-zinc-200 md:bg-white md:shadow-xl md:shadow-zinc-950/5 xl:grid-cols-[310px_minmax(0,1fr)]">
           <aside className="desktop-sidebar hidden min-h-[calc(100dvh-3rem)] flex-col border-r border-zinc-200 bg-white p-6 md:flex xl:p-7">
-            <button onClick={() => setActiveTab("dashboard")} className="mb-8 flex min-h-14 items-center gap-4 rounded-2xl px-2 text-left">
-              <img src="/icons/pwa-192.png" alt="" className="h-12 w-12 rounded-xl" />
-              <span className="text-2xl font-semibold tracking-tight">Zentaskra</span>
-            </button>
+            <div className="mb-8 flex items-center gap-2">
+              <button onClick={() => setActiveTab("dashboard")} className="flex min-h-14 min-w-0 flex-1 items-center gap-4 rounded-2xl px-2 text-left">
+                <img src="/icons/pwa-192.png" alt="" className="h-12 w-12 rounded-xl" />
+                <span className="truncate text-2xl font-semibold tracking-tight">Zentaskra</span>
+              </button>
+              <button onClick={() => setShowNotifications(true)} className="relative flex min-h-12 min-w-12 items-center justify-center rounded-2xl text-zinc-600 hover:bg-zinc-100" aria-label={`Open notifications${unreadNotificationCount ? `, ${unreadNotificationCount} unread` : ""}`}><Bell className="h-6 w-6" />{unreadNotificationCount > 0 && <span className="absolute right-0 top-0 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">{Math.min(unreadNotificationCount, 99)}</span>}</button>
+            </div>
             <nav className="flex flex-1 flex-col space-y-1">
 <button
   onClick={() => setActiveTab("dashboard")}
@@ -2554,8 +2839,12 @@ if (authLoading) {
       : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950"
   )}
 >
-  <GraduationCap className="h-6 w-6" /> Grades
+<GraduationCap className="h-6 w-6" /> Grades
 </button>
+
+              <button onClick={() => { setActiveTab("leaderboard"); void loadLeaderboard(); }} className={cn("flex min-h-14 w-full items-center gap-4 rounded-2xl px-4 text-left text-base font-semibold transition xl:text-lg", activeTab === "leaderboard" ? "bg-indigo-50 text-indigo-700" : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950")}>
+                <Trophy className="h-6 w-6" /> Leaderboard
+              </button>
 
               <button
                 onClick={() => setActiveTab("settings")}
@@ -2578,6 +2867,7 @@ if (authLoading) {
           <main className="desktop-app-main min-w-0 md:bg-[#fafafa] md:p-8 xl:p-10 2xl:p-12">
             {activeTab === "dashboard" && (
               <>
+              <ProductivityProgress {...productivityProgress} guest={!session?.user} />
               <MobileDashboard
                 nextClass={mobileDashboardData.nextClass}
                 dueToday={mobileDashboardData.dueToday}
@@ -2587,6 +2877,8 @@ if (authLoading) {
                 onTasks={() => setActiveTab("tasks")}
                 onSchedule={() => setActiveTab("schedule")}
                 onAddTask={openAddTaskModal}
+                onChat={() => setActiveTab("chat")}
+                onPlanner={() => setActiveTab("planner")}
                 onEditTask={(id) => {
                   const task = tasks.find((item) => item.id === id);
                   if (task) openEditTaskModal(task);
@@ -2638,6 +2930,19 @@ if (authLoading) {
               />
             )}
 
+            {activeTab === "leaderboard" && (
+              <Leaderboard
+                signedIn={Boolean(session?.user)}
+                rows={leaderboardRows}
+                displayName={publicDisplayName}
+                loading={leaderboardLoading}
+                error={leaderboardError}
+                onPeriodChange={(period) => void loadLeaderboard(period)}
+                onSaveName={savePublicDisplayName}
+                onSignIn={() => setGuestMode(false)}
+              />
+            )}
+
             {activeTab === "tasks" && (
               <div className="hidden space-y-5 md:block">
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
@@ -2672,7 +2977,7 @@ if (authLoading) {
                  <StatCard
   icon={<Flame className="h-6 w-6 text-orange-500" />}
   label="Streak"
-  value={`${completionStreak} day${completionStreak === 1 ? "" : "s"}`}
+  value={`${productivityProgress.streak} day${productivityProgress.streak === 1 ? "" : "s"}`}
   tint="bg-orange-100"
   themeClasses={themeClasses}
 />
@@ -3300,195 +3605,21 @@ if (authLoading) {
             )}
 
             {activeTab === "planner" && (
-              <div className="space-y-5">
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                  <StatCard
-  icon={<CalendarDays className="h-6 w-6 text-violet-600" />}
-  label="Study Sessions"
-  value={plannerStats.sessions}
-  tint="bg-violet-100"
-  themeClasses={themeClasses}
-/>
-                  <StatCard
-  icon={<Clock3 className="h-6 w-6 text-blue-500" />}
-  label="Weekly Hours"
-  value={plannerStats.weeklyHours.toFixed(1)}
-  tint="bg-blue-100"
-  themeClasses={themeClasses}
-/>
-                  <StatCard
-  icon={<Target className="h-6 w-6 text-green-500" />}
-  label="Goals Completed"
-  value={`${plannerStats.completedGoals}/${goals.length}`}
-  tint="bg-green-100"
-  themeClasses={themeClasses}
-/>
-                </div>
-
-                <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_460px]">
-                  <section className={cn("rounded-2xl border p-5 shadow-sm", themeClasses.card)}>
-                    <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
-                      <h2 className="text-[34px] font-semibold tracking-tight">
-                        Weekly Study Schedule
-                      </h2>
-                      <div className="flex flex-wrap gap-3">
-                        <button
-                          onClick={() => setShowSessionModal(true)}
-                          className="flex items-center gap-2 rounded-xl bg-[#02031c] px-5 py-3 text-lg font-semibold text-white"
-                        >
-                          <Plus className="h-5 w-5" /> Add Session
-                        </button>
-                        <button
-                          onClick={startStudyPlanFlow}
-                          className="rounded-xl border border-zinc-300 px-5 py-3 text-lg font-semibold text-zinc-700"
-                        >
-                          Generate Study Plan
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="max-h-[560px] space-y-5 overflow-auto pr-2">
-                      {weekDays.map((day) => {
-                        const daySessions = sessions.filter(
-                          (session) => session.day === day
-                        );
-                        if (!daySessions.length) return null;
-
-                        return (
-                          <div key={day}>
-                            <h3 className="mb-2 text-2xl font-semibold">{day}</h3>
-                            <div className="space-y-3">
-                              {daySessions.map((session) => (
-                                <div
-                                  key={session.id}
-                                  className={cn("flex items-center justify-between rounded-2xl p-4", themeClasses.card)}
-                                >
-                                  <div>
-                                    <p className="text-2xl font-medium">
-                                      {session.subject}
-                                    </p>
-                                    <p className="text-xl text-zinc-500">
-                                      {session.topic}
-                                    </p>
-                                    <div className="mt-2 flex items-center gap-3 text-lg text-zinc-500">
-                                      <Clock3 className="h-4 w-4" /> {session.time}
-                                      <span>{session.duration} min</span>
-                                    </div>
-                                  </div>
-                                  <button
-                                    onClick={() =>
-                                      setSessions((prev) =>
-                                        prev.filter((item) => item.id !== session.id)
-                                      )
-                                    }
-                                    className="p-2 text-rose-500"
-                                  >
-                                    <Trash2 className="h-5 w-5" />
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-
-                      {sessions.length === 0 && (
-                        <div className="rounded-2xl border border-dashed border-zinc-300 p-8 text-center text-xl text-zinc-500">
-                          No study sessions yet. Click <span className="font-semibold">Add Session</span> to create
-                          one manually, or use <span className="font-semibold">Generate Study Plan</span> to
-                          auto-build your week.
-                        </div>
-                      )}
-                    </div>
-                  </section>
-
-                  <section className={cn("rounded-2xl border p-5 shadow-sm", themeClasses.card)}>
-                    <div className="mb-5 flex items-center justify-between">
-                      <h2 className="text-[34px] font-semibold tracking-tight">
-                        Study Goals
-                      </h2>
-                      <Target className="h-6 w-6 text-zinc-500" />
-                    </div>
-
-                    <div className="mb-4 flex items-center gap-3">
-                      <input
-                        value={newGoal}
-                        onChange={(e) => setNewGoal(e.target.value)}
-                        placeholder="Add a new goal..."
-                        className="flex-1 rounded-xl bg-zinc-100 px-4 py-4 text-xl outline-none placeholder:text-zinc-400"
-                      />
-                      <button
-                        onClick={() => {
-                          if (!newGoal.trim()) return;
-                          setGoals((prev) => [
-                            ...prev,
-                            { id: Date.now(), text: newGoal.trim(), done: false },
-                          ]);
-                          setNewGoal("");
-                        }}
-                        className="rounded-xl bg-[#02031c] p-4 text-white"
-                      >
-                        <Plus className="h-6 w-6" />
-                      </button>
-                    </div>
-
-                    <div className="space-y-3">
-                      {goals.map((goal) => (
-                        <div
-                          key={goal.id}
-                          className={cn("flex items-center justify-between gap-3 rounded-2xl px-4 py-4", themeClasses.card)}
-                        >
-                          <button
-                            onClick={() =>
-                              setGoals((prev) =>
-                                prev.map((item) =>
-                                  item.id === goal.id
-                                    ? { ...item, done: !item.done }
-                                    : item
-                                )
-                              )
-                            }
-                            className="flex flex-1 items-center gap-3 text-left text-xl"
-                          >
-                            <div
-                              className={cn(
-                                "flex h-6 w-6 items-center justify-center rounded border-2",
-                                goal.done
-                                  ? "border-blue-500 bg-blue-500 text-white"
-                                  : "border-zinc-500 bg-transparent"
-                              )}
-                            >
-                              {goal.done ? "✓" : ""}
-                            </div>
-                            <span
-                              className={cn(goal.done && "text-zinc-400 line-through")}
-                            >
-                              {goal.text}
-                            </span>
-                          </button>
-                          <button
-                            onClick={() =>
-                              setGoals((prev) =>
-                                prev.filter((item) => item.id !== goal.id)
-                              )
-                            }
-                            className="p-2 text-rose-500"
-                          >
-                            <Trash2 className="h-5 w-5" />
-                          </button>
-                        </div>
-                      ))}
-
-                      {goals.length === 0 && (
-                        <div className="rounded-2xl border border-dashed border-zinc-300 p-6 text-center text-zinc-500">
-                          No study goals yet.
-                        </div>
-                      )}
-                    </div>
-                  </section>
-                </div>
-              </div>
+              <StudyPlanner
+                sessions={sessions}
+                goals={goals}
+                weeklyHours={plannerStats.weeklyHours}
+                onGenerate={generateTodayStudyPlan}
+                onAdd={openAddSession}
+                onEdit={openEditSession}
+                onDelete={(id) => void deleteStudySession(id)}
+                onComplete={toggleStudySessionComplete}
+                onAddGoal={(text) => setGoals((current) => [...current, { id: Date.now(), text, done: false }])}
+                onToggleGoal={(id) => setGoals((current) => current.map((item) => item.id === id ? { ...item, done: !item.done } : item))}
+                onDeleteGoal={(id) => setGoals((current) => current.filter((item) => item.id !== id))}
+              />
             )}
+
 {activeTab === "grades" && (
   <>
   <MobileGradesPage
@@ -3784,6 +3915,13 @@ if (authLoading) {
 </div>
 </div>
 </div>
+
+<NotificationSettings
+  preferences={notificationPreferences}
+  permission={typeof Notification === "undefined" ? "unsupported" : Notification.permission}
+  onChange={(next) => void saveNotificationPreferences(next)}
+  onEnableBrowser={() => void enableBrowserNotifications()}
+/>
 
 <div className="rounded-2xl border border-zinc-200 p-5">
   <h3 className="text-2xl font-semibold">Account</h3>
@@ -4220,23 +4358,7 @@ if (authLoading) {
   </div>
 )}
       {showSessionModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl">
-            <div className="mb-5 flex items-center justify-between">
-              <div>
-                <h3 className="text-3xl font-semibold">Add Session</h3>
-                <p className="mt-1 text-zinc-500">
-                  Create your own study block manually.
-                </p>
-              </div>
-              <button
-                onClick={() => setShowSessionModal(false)}
-                className="rounded-full bg-zinc-100 p-2 text-zinc-600"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
+        <MobileSheet open title={editingSessionId === null ? "Add study session" : "Edit study session"} description="Set a realistic time block for focused work." onClose={() => { setShowSessionModal(false); setEditingSessionId(null); setSessionForm(emptySessionForm); }} className="sm:max-w-xl">
             <div className="grid gap-4 md:grid-cols-2">
               <label className="space-y-2">
                 <span className="text-sm font-medium text-zinc-600">Subject</span>
@@ -4328,7 +4450,7 @@ if (authLoading) {
 
             <div className="mt-6 flex justify-end gap-3">
               <button
-                onClick={() => setShowSessionModal(false)}
+                onClick={() => { setShowSessionModal(false); setEditingSessionId(null); setSessionForm(emptySessionForm); }}
                 className="rounded-xl border border-zinc-300 px-5 py-3 font-semibold text-zinc-700"
               >
                 Cancel
@@ -4337,11 +4459,10 @@ if (authLoading) {
                 onClick={addManualSession}
                 className="rounded-xl bg-[#02031c] px-5 py-3 font-semibold text-white"
               >
-                Add Session
+                {editingSessionId === null ? "Add Session" : "Save Changes"}
               </button>
             </div>
-          </div>
-        </div>
+        </MobileSheet>
       )}
 
       {showTaskModal && (
@@ -4532,6 +4653,15 @@ if (authLoading) {
         />
       )}
 
+      <NotificationCenter
+        open={showNotifications}
+        notifications={notifications}
+        onClose={() => setShowNotifications(false)}
+        onOpen={openNotification}
+        onDismiss={(id) => void updateNotificationState(id, { dismissed: true, read: true })}
+        onMarkAllRead={() => void markAllNotificationsRead()}
+      />
+
       {!showAuthGate && (
         <>
           <MobileBottomNav
@@ -4542,11 +4672,10 @@ if (authLoading) {
             }}
             onMore={() => setShowMobileMore(true)}
           />
-          <MobileSheet open={showMobileMore} title="More" description="Your account, tools, and app settings." onClose={() => setShowMobileMore(false)} className="sm:max-w-md">
+          <MobileSheet open={showMobileMore} title="More" description="Settings, help, and account controls." onClose={() => setShowMobileMore(false)} className="sm:max-w-md">
             <nav className="grid gap-2" aria-label="More navigation">
               {([
-                ["chat", "AI Chat"],
-                ["planner", "Study Planner"],
+                ["leaderboard", "Leaderboard"],
                 ["settings", "Settings"],
               ] as const).map(([tab, label]) => (
                 <button key={tab} onClick={() => { setActiveTab(tab); setShowMobileMore(false); }} className="min-h-12 rounded-xl border border-zinc-200 px-4 text-left font-semibold hover:bg-zinc-50">
@@ -4589,32 +4718,4 @@ function getLocalDateKey(date = new Date()) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
-}
-
-function calculateCompletionStreak(tasks: Task[]) {
-  const completedDays = Array.from(
-    new Set(tasks.filter((task) => task.completedAt).map((task) => task.completedAt as string))
-  ).sort();
-
-  if (!completedDays.length) return 0;
-
-  const completedSet = new Set(completedDays);
-  const today = new Date();
-  const todayKey = getLocalDateKey(today);
-
-  const cursor = new Date(today);
-  if (!completedSet.has(todayKey)) {
-    cursor.setDate(cursor.getDate() - 1);
-    if (!completedSet.has(getLocalDateKey(cursor))) {
-      return 0;
-    }
-  }
-
-  let streak = 0;
-  while (completedSet.has(getLocalDateKey(cursor))) {
-    streak += 1;
-    cursor.setDate(cursor.getDate() - 1);
-  }
-
-  return streak;
 }

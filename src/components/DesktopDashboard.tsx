@@ -1,4 +1,4 @@
-import { ArrowRight, Bell, CalendarDays, CheckCircle2, Clock3, MapPin, Plus, TriangleAlert } from "lucide-react";
+import { ArrowRight, CalendarDays, CheckCircle2, Clock3, MapPin, Plus, TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ScheduleMeeting } from "../features/schedule/types";
 import type { MobileDashboardClass, MobileDashboardTask } from "./MobileDashboard";
@@ -51,8 +51,6 @@ export function DesktopDashboard({ nextClass, dueToday, missing, upcoming, today
       </div>
 
       {missing.length > 0 && <section className="desktop-surface rounded-[30px] bg-white p-7 shadow-lg shadow-zinc-950/5"><div className="mb-5 flex items-center gap-3"><TriangleAlert className="h-6 w-6 text-red-600" /><h3 className="text-2xl font-semibold text-red-700">Missing assignments</h3></div><div className="grid gap-4 xl:grid-cols-2">{missing.slice(0, 4).map(task => <TaskRow key={task.id} task={task} missing onClick={() => onEditTask(task.id)} />)}</div></section>}
-
-      <section className="desktop-surface grid items-center gap-6 rounded-[30px] bg-white p-7 shadow-lg shadow-zinc-950/5 xl:grid-cols-[1fr_auto]"><div className="flex items-start gap-4"><span className="rounded-2xl bg-indigo-100 p-3 text-indigo-700"><Bell className="h-6 w-6" /></span><div><h3 className="text-2xl font-semibold">Assignment check</h3><p className="mt-2 max-w-3xl text-base leading-6 text-zinc-500">Select an assignment in Tasks to update progress, review deadlines, and manage reminders.</p></div></div><button onClick={onTasks} className="min-h-12 rounded-2xl bg-indigo-600 px-6 text-base font-semibold text-white">Open tasks</button></section>
     </div>
   );
 }
