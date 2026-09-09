@@ -54,6 +54,16 @@ type TaskStatus = "upcoming" | "in-progress" | "completed";
 type Priority = "high" | "medium" | "low";
 type Tab = "dashboard" | "tasks" | "schedule" | "chat" | "planner" | "grades" | "leaderboard" | "settings";
 type Theme = "light" | "dark" | "forest" | "sunset" | "ocean" | "lavender" | "midnight" | "rose" | "slate";
+type BackgroundPattern = "none" | "dots" | "grid" | "diagonal" | "contours" | "notebook";
+
+const backgroundPatterns: Array<{ id: BackgroundPattern; name: string; description: string }> = [
+  { id: "none", name: "Clean", description: "No background pattern" },
+  { id: "dots", name: "Dot matrix", description: "Quiet, evenly spaced dots" },
+  { id: "grid", name: "Graph", description: "A structured study grid" },
+  { id: "diagonal", name: "Diagonal", description: "Fine directional lines" },
+  { id: "contours", name: "Contours", description: "Soft topographic rings" },
+  { id: "notebook", name: "Notebook", description: "Subtle ruled paper" },
+];
 
 const daisyThemeNames: Record<Theme, string> = {
   light: "corporate",
@@ -286,6 +296,7 @@ const STORAGE_KEYS = {
   messages: "zentaskra_messages_v2",
   studyPlanFlow: "zentaskra_study_plan_flow_v2",
   theme: "zentaskra_theme_v1",
+  backgroundPattern: "zentaskra_background_pattern_v1",
   grades: "zentaskra_grades_v1",
   categories: "zentaskra_categories_v1",
   schedule: "zentaskra_schedule_v1",
@@ -1003,8 +1014,11 @@ const [tasks, setTasks] = useState<Task[]>(
   const [studyPlanFlow, setStudyPlanFlow] = useState<StudyPlanFlow>(
     () => readStorage(STORAGE_KEYS.studyPlanFlow, defaultStudyPlanFlow)
   );
-  const [theme, setTheme] = useState<Theme>(
+const [theme, setTheme] = useState<Theme>(
   () => readStorage(STORAGE_KEYS.theme, "light")
+);
+const [backgroundPattern, setBackgroundPattern] = useState<BackgroundPattern>(
+  () => readStorage(STORAGE_KEYS.backgroundPattern, "none")
 );
 
 const [courses, setCourses] = useState<GradeCourse[]>(
@@ -1170,6 +1184,10 @@ useEffect(() => {
 useEffect(() => {
   window.localStorage.setItem(STORAGE_KEYS.theme, JSON.stringify(theme));
 }, [theme]);
+
+useEffect(() => {
+  window.localStorage.setItem(STORAGE_KEYS.backgroundPattern, JSON.stringify(backgroundPattern));
+}, [backgroundPattern]);
 
 useEffect(() => {
   window.localStorage.setItem(STORAGE_KEYS.grades, JSON.stringify(courses));
@@ -2741,7 +2759,7 @@ if (authLoading) {
 }
 
   return (
-<div className={themeClasses.page} data-theme={daisyThemeNames[theme]}>
+<div className={cn(themeClasses.page, `pattern-${backgroundPattern}`)} data-theme={daisyThemeNames[theme]}>
       <style>{`
         .zentaskra-dark .bg-white { background-color: var(--zt-dark-card) !important; }
         .zentaskra-dark .bg-zinc-50 { background-color: var(--zt-dark-subtle) !important; }
@@ -3981,6 +3999,33 @@ if (authLoading) {
                           </button>
                           );
                         })}
+</div>
+
+<div className="mt-3 border-t border-zinc-200/80 pt-6">
+  <div>
+    <h4 className="text-xl font-semibold tracking-tight">Background pattern</h4>
+    <p className="mt-1 text-sm text-zinc-500">Choose a texture independently from your color theme.</p>
+  </div>
+  <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+    {backgroundPatterns.map((pattern) => {
+      const isSelected = backgroundPattern === pattern.id;
+      return (
+        <button
+          key={pattern.id}
+          onClick={() => setBackgroundPattern(pattern.id)}
+          aria-pressed={isSelected}
+          className={cn(
+            "rounded-2xl border bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md",
+            isSelected ? "border-indigo-500 ring-2 ring-indigo-500/20" : "border-zinc-200/80"
+          )}
+        >
+          <span className={cn("pattern-preview block h-16 rounded-xl border border-zinc-200", `pattern-${pattern.id}`)} aria-hidden="true" />
+          <span className="mt-3 block text-sm font-semibold text-zinc-950">{pattern.name}</span>
+          <span className="mt-1 block text-xs leading-4 text-zinc-500">{pattern.description}</span>
+        </button>
+      );
+    })}
+  </div>
 </div>
 </div>
 </div>

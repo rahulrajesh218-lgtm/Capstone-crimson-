@@ -79,7 +79,27 @@ textarea:focus {
   --zt-dark-card: var(--color-base-200);
   --zt-dark-canvas: var(--color-base-300);
   --zt-dark-subtle: color-mix(in oklab, var(--color-base-200) 72%, var(--color-base-300));
-  background: radial-gradient(circle at top left, color-mix(in oklab, var(--color-primary) 14%, var(--color-base-100)) 0%, var(--color-base-100) 44%, var(--color-base-200) 100%);
+  background-color: var(--color-base-100);
+  background-image: var(--zt-pattern-image, linear-gradient(transparent, transparent)), radial-gradient(circle at top left, color-mix(in oklab, var(--color-primary) 14%, var(--color-base-100)) 0%, var(--color-base-100) 44%, var(--color-base-200) 100%);
+  background-size: var(--zt-pattern-size, auto), auto;
+}
+
+.pattern-none { --zt-pattern-image: linear-gradient(transparent, transparent); --zt-pattern-size: auto; }
+.pattern-dots { --zt-pattern-image: radial-gradient(circle, color-mix(in oklab, var(--color-primary) 18%, transparent) 1.1px, transparent 1.4px); --zt-pattern-size: 22px 22px; }
+.pattern-grid { --zt-pattern-image: linear-gradient(color-mix(in oklab, var(--color-primary) 8%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in oklab, var(--color-primary) 8%, transparent) 1px, transparent 1px); --zt-pattern-size: 30px 30px, 30px 30px; }
+.pattern-diagonal { --zt-pattern-image: repeating-linear-gradient(135deg, transparent 0 14px, color-mix(in oklab, var(--color-primary) 7%, transparent) 14px 15px); --zt-pattern-size: 30px 30px; }
+.pattern-contours { --zt-pattern-image: repeating-radial-gradient(ellipse at 15% 20%, transparent 0 25px, color-mix(in oklab, var(--color-primary) 7%, transparent) 26px 27px, transparent 28px 45px); --zt-pattern-size: 210px 155px; }
+.pattern-notebook { --zt-pattern-image: repeating-linear-gradient(to bottom, transparent 0 31px, color-mix(in oklab, var(--color-primary) 8%, transparent) 31px 32px); --zt-pattern-size: 100% 32px; }
+
+.zentaskra-theme .desktop-app-main {
+  background-image: var(--zt-pattern-image);
+  background-size: var(--zt-pattern-size);
+}
+
+.pattern-preview {
+  background-color: var(--color-base-100);
+  background-image: var(--zt-pattern-image);
+  background-size: var(--zt-pattern-size);
 }
 
 .zentaskra-theme input:focus,
