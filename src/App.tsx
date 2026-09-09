@@ -67,7 +67,7 @@ const themeDesigns: Record<Theme, {
   light: {
     name: "Studio",
     description: "Bright, calm, and focused",
-    page: "zentaskra-light bg-[radial-gradient(circle_at_top_left,_#eef2ff_0,_#f8fafc_38%,_#f4f4f5_100%)] text-zinc-950",
+    page: "zentaskra-theme zentaskra-light bg-[radial-gradient(circle_at_top_left,_#e8ecff_0,_#f8fafc_42%,_#f1f3f8_100%)] text-zinc-950",
     card: "border-white/80 bg-white/90 shadow-[0_12px_35px_rgba(15,23,42,0.06)] backdrop-blur-sm",
     primary: "bg-indigo-600 text-white shadow-sm hover:bg-indigo-700",
     badge: "border border-indigo-100 bg-indigo-50 text-indigo-700",
@@ -76,7 +76,7 @@ const themeDesigns: Record<Theme, {
   dark: {
     name: "Graphite",
     description: "Clean contrast for late nights",
-    page: "zentaskra-dark bg-[radial-gradient(circle_at_top_left,_#182033_0,_#0b1020_42%,_#070a12_100%)] text-zinc-100",
+    page: "zentaskra-theme zentaskra-dark bg-[radial-gradient(circle_at_top_left,_#1b2335_0,_#0c111d_46%,_#070a11_100%)] text-zinc-100",
     card: "border-white/10 bg-[#111827]/90 shadow-[0_14px_40px_rgba(0,0,0,0.24)] backdrop-blur-sm",
     primary: "bg-indigo-500 text-white shadow-sm hover:bg-indigo-400",
     badge: "border border-white/10 bg-white/10 text-zinc-100",
@@ -85,7 +85,7 @@ const themeDesigns: Record<Theme, {
   forest: {
     name: "Evergreen",
     description: "Grounded greens and soft neutrals",
-    page: "zentaskra-forest bg-[radial-gradient(circle_at_top_left,_#d1fae5_0,_#f0fdf4_38%,_#f8fafc_100%)] text-emerald-950",
+    page: "zentaskra-theme zentaskra-forest bg-[radial-gradient(circle_at_top_left,_#d8eee5_0,_#f4f8f5_44%,_#eef3f1_100%)] text-emerald-950",
     card: "border-emerald-100/80 bg-white/88 shadow-[0_12px_34px_rgba(6,78,59,0.08)] backdrop-blur-sm",
     primary: "bg-emerald-700 text-white shadow-sm hover:bg-emerald-800",
     badge: "border border-emerald-200 bg-emerald-50 text-emerald-800",
@@ -94,7 +94,7 @@ const themeDesigns: Record<Theme, {
   sunset: {
     name: "Sienna",
     description: "Warm, energetic, and refined",
-    page: "zentaskra-sunset bg-[radial-gradient(circle_at_top_left,_#ffedd5_0,_#fff7ed_42%,_#fafaf9_100%)] text-stone-950",
+    page: "zentaskra-theme zentaskra-sunset bg-[radial-gradient(circle_at_top_left,_#f8dfce_0,_#fbf5ef_44%,_#f4f1ee_100%)] text-stone-950",
     card: "border-orange-100 bg-white/88 shadow-[0_12px_34px_rgba(154,52,18,0.08)] backdrop-blur-sm",
     primary: "bg-orange-600 text-white shadow-sm hover:bg-orange-700",
     badge: "border border-orange-200 bg-orange-50 text-orange-800",
@@ -103,7 +103,7 @@ const themeDesigns: Record<Theme, {
   ocean: {
     name: "Coastal",
     description: "Clear blues with an airy finish",
-    page: "zentaskra-ocean bg-[radial-gradient(circle_at_top_left,_#cffafe_0,_#ecfeff_38%,_#f8fafc_100%)] text-slate-950",
+    page: "zentaskra-theme zentaskra-ocean bg-[radial-gradient(circle_at_top_left,_#d5edf5_0,_#f1f8fa_44%,_#edf3f6_100%)] text-slate-950",
     card: "border-cyan-100 bg-white/88 shadow-[0_12px_34px_rgba(14,116,144,0.08)] backdrop-blur-sm",
     primary: "bg-cyan-700 text-white shadow-sm hover:bg-cyan-800",
     badge: "border border-cyan-200 bg-cyan-50 text-cyan-800",
@@ -112,7 +112,7 @@ const themeDesigns: Record<Theme, {
   lavender: {
     name: "Lavender",
     description: "Soft violet with crisp details",
-    page: "zentaskra-lavender bg-[radial-gradient(circle_at_top_left,_#ede9fe_0,_#faf5ff_42%,_#fafafa_100%)] text-violet-950",
+    page: "zentaskra-theme zentaskra-lavender bg-[radial-gradient(circle_at_top_left,_#e7e1f5_0,_#f7f4fa_44%,_#f1eff5_100%)] text-violet-950",
     card: "border-violet-100 bg-white/88 shadow-[0_12px_34px_rgba(91,33,182,0.08)] backdrop-blur-sm",
     primary: "bg-violet-700 text-white shadow-sm hover:bg-violet-800",
     badge: "border border-violet-200 bg-violet-50 text-violet-800",
@@ -121,7 +121,7 @@ const themeDesigns: Record<Theme, {
   midnight: {
     name: "Midnight",
     description: "Deep indigo with a vivid accent",
-    page: "zentaskra-dark bg-[radial-gradient(circle_at_top_left,_#24265f_0,_#0f1235_40%,_#050617_100%)] text-indigo-50",
+    page: "zentaskra-theme zentaskra-dark zentaskra-midnight bg-[radial-gradient(circle_at_top_left,_#282657_0,_#10122d_44%,_#060713_100%)] text-indigo-50",
     card: "border-indigo-400/15 bg-indigo-950/72 shadow-[0_14px_40px_rgba(0,0,0,0.3)] backdrop-blur-md",
     primary: "bg-violet-500 text-white shadow-sm hover:bg-violet-400",
     badge: "border border-indigo-300/15 bg-indigo-300/10 text-indigo-100",
@@ -130,7 +130,7 @@ const themeDesigns: Record<Theme, {
   rose: {
     name: "Rosewood",
     description: "Warm rose without the noise",
-    page: "zentaskra-rose bg-[radial-gradient(circle_at_top_left,_#ffe4e6_0,_#fff1f2_40%,_#fafafa_100%)] text-rose-950",
+    page: "zentaskra-theme zentaskra-rose bg-[radial-gradient(circle_at_top_left,_#f5dfe4_0,_#fbf4f5_44%,_#f4eff1_100%)] text-rose-950",
     card: "border-rose-100 bg-white/88 shadow-[0_12px_34px_rgba(159,18,57,0.08)] backdrop-blur-sm",
     primary: "bg-rose-600 text-white shadow-sm hover:bg-rose-700",
     badge: "border border-rose-200 bg-rose-50 text-rose-800",
@@ -139,7 +139,7 @@ const themeDesigns: Record<Theme, {
   slate: {
     name: "Executive",
     description: "Neutral, polished, and understated",
-    page: "zentaskra-slate bg-[radial-gradient(circle_at_top_left,_#e2e8f0_0,_#f1f5f9_42%,_#f8fafc_100%)] text-slate-950",
+    page: "zentaskra-theme zentaskra-slate bg-[radial-gradient(circle_at_top_left,_#dce3ea_0,_#f3f5f7_44%,_#eceff2_100%)] text-slate-950",
     card: "border-slate-200/80 bg-white/90 shadow-[0_12px_34px_rgba(15,23,42,0.07)] backdrop-blur-sm",
     primary: "bg-slate-800 text-white shadow-sm hover:bg-slate-900",
     badge: "border border-slate-200 bg-slate-100 text-slate-700",
@@ -2729,12 +2729,17 @@ if (authLoading) {
 }
 
   return (
-<div className={themeClasses.page}>
+<div className={themeClasses.page} data-theme={theme}>
       <style>{`
-        .zentaskra-dark .bg-white { background-color: #111827 !important; }
-        .zentaskra-dark .bg-zinc-50 { background-color: #0f172a !important; }
-        .zentaskra-dark .bg-zinc-100 { background-color: #1f2937 !important; }
-        .zentaskra-dark .bg-zinc-200 { background-color: #1f2937 !important; }
+        .zentaskra-dark .bg-white { background-color: var(--zt-dark-card) !important; }
+        .zentaskra-dark .bg-zinc-50 { background-color: var(--zt-dark-subtle) !important; }
+        .zentaskra-dark .bg-zinc-100 { background-color: color-mix(in srgb, var(--zt-dark-card) 78%, white) !important; }
+        .zentaskra-dark .bg-zinc-200 { background-color: color-mix(in srgb, var(--zt-dark-card) 78%, white) !important; }
+        .zentaskra-dark [class~="bg-white/45"],
+        .zentaskra-dark [class~="bg-white/88"],
+        .zentaskra-dark [class~="bg-white/90"] { background-color: color-mix(in srgb, var(--zt-dark-card) 94%, transparent) !important; }
+        .zentaskra-dark [class~="border-white/60"],
+        .zentaskra-dark [class~="border-white/80"] { border-color: rgba(148, 163, 184, 0.18) !important; }
         .zentaskra-dark .border-zinc-200,
         .zentaskra-dark .border-zinc-300,
         .zentaskra-dark .border-zinc-400 { border-color: #374151 !important; }
@@ -2748,13 +2753,13 @@ if (authLoading) {
         .zentaskra-dark textarea { background-color: #0f172a; color: #f8fafc; border-color: #334155; }
         .zentaskra-dark input::placeholder,
         .zentaskra-dark textarea::placeholder { color: #94a3b8; }
-        .zentaskra-dark .desktop-app-main { background-color: #0b1020 !important; }
+        .zentaskra-dark .desktop-app-main { background-color: var(--zt-dark-canvas) !important; }
         .zentaskra-dark .desktop-app-shell,
         .zentaskra-dark .desktop-sidebar,
         .zentaskra-dark .desktop-surface,
-        .zentaskra-dark .desktop-summary-card { background-color: #111827 !important; }
+        .zentaskra-dark .desktop-summary-card { background-color: var(--zt-dark-card) !important; }
         .zentaskra-dark .desktop-empty-state,
-        .zentaskra-dark .desktop-task-row { background-color: #0f172a !important; }
+        .zentaskra-dark .desktop-task-row { background-color: var(--zt-dark-subtle) !important; }
         .zentaskra-dark .desktop-missing-summary,
         .zentaskra-dark .desktop-missing-row { background-color: rgba(127, 29, 29, 0.28) !important; }
         .zentaskra-dark .desktop-missing-summary .text-zinc-950,
