@@ -1,4 +1,4 @@
-const CACHE_VERSION = "zentaskra-shell-v1";
+const CACHE_VERSION = "zentaskra-shell-v2";
 const APP_SHELL = [
   "/",
   "/manifest.webmanifest",
@@ -66,4 +66,29 @@ self.addEventListener("fetch", (event) => {
       })
     );
   }
+});
+
+self.addEventListener("push", (event) => {
+  if (!event.data) return;
+  let data;
+  try { data = event.data.json(); } catch { data = { title: "Zentaskra", body: event.data.text() }; }
+  event.waitUntil(self.registration.showNotification(data.title || "Zentaskra", {
+    body: data.body || "You have a new update.",
+    icon: data.icon || "/icons/pwa-192.png",
+    badge: data.badge || "/icons/pwa-192.png",
+    tag: data.key,
+    renotify: false,
+    data: { target: data.target, entityId: data.entityId },
+  }));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = event.notification.data?.target || "home";
+  const destination = `/?notificationTarget=${encodeURIComponent(target)}`;
+  event.waitUntil(clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
+    const existing = windows[0];
+    if (existing) return existing.focus().then(() => existing.navigate(destination));
+    return clients.openWindow(destination);
+  }));
 });

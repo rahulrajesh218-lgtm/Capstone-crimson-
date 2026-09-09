@@ -21,6 +21,7 @@ import type { ScheduleMeeting } from "./features/schedule/types";
 import { categoryBadgeClass, type TaskCategory } from "./features/tasks/categories";
 import { deriveNotifications } from "./features/notifications/derive";
 import { defaultNotificationPreferences, type AppNotification, type NotificationPreferences } from "./features/notifications/types";
+import { getPushSubscription, subscribeDevice, supportsPushNotifications, unsubscribeDevice } from "./features/notifications/push";
 import { calculateProgress, type XpEvent } from "./features/gamification/progress";
 import { usePwaInstall } from "./pwa";
 import {
@@ -1021,6 +1022,9 @@ const [notificationPreferences, setNotificationPreferences] = useState<Notificat
   () => readStorage(STORAGE_KEYS.notificationPreferences, defaultNotificationPreferences)
 );
 const [notificationClock, setNotificationClock] = useState(() => Date.now());
+const [pushActive, setPushActive] = useState(false);
+const [pushBusy, setPushBusy] = useState(false);
+const [pushError, setPushError] = useState("");
 const [leaderboardRows, setLeaderboardRows] = useState<LeaderboardRow[]>([]);
 const [publicDisplayName, setPublicDisplayName] = useState("");
 const [leaderboardLoading, setLeaderboardLoading] = useState(false);
@@ -1174,6 +1178,22 @@ useEffect(() => {
 useEffect(() => {
   const timer = window.setInterval(() => setNotificationClock(Date.now()), 60_000);
   return () => window.clearInterval(timer);
+}, []);
+
+useEffect(() => {
+  let cancelled = false;
+  getPushSubscription().then((subscription) => {
+    if (!cancelled) setPushActive(Boolean(subscription));
+  }).catch(() => { if (!cancelled) setPushActive(false); });
+  return () => { cancelled = true; };
+}, [session]);
+
+useEffect(() => {
+  const target = new URLSearchParams(window.location.search).get("notificationTarget");
+  if (target === "tasks" || target === "schedule" || target === "planner") {
+    setActiveTab(target);
+    window.history.replaceState({}, "", window.location.pathname);
+  }
 }, []);
 
 useEffect(() => {
@@ -1354,6 +1374,7 @@ useEffect(() => {
 
   useEffect(() => {
     if (!notificationPreferences.browserEnabled || typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    if (session?.user && pushActive) return;
     const owner = session?.user?.id ?? "guest";
     const storageKey = `${STORAGE_KEYS.browserNotificationsSent}:${owner}`;
     const sent = new Set(readStorage<string[]>(storageKey, []));
@@ -1363,7 +1384,7 @@ useEffect(() => {
       sent.add(notification.id);
     });
     if (unsent.length) window.localStorage.setItem(storageKey, JSON.stringify(Array.from(sent).slice(-100)));
-  }, [notificationPreferences.browserEnabled, notifications, session]);
+  }, [notificationPreferences.browserEnabled, notifications, pushActive, session]);
 
   const archivedTasks = useMemo(
     () => tasks.filter((task) => task.archived),
@@ -1592,6 +1613,14 @@ setAuthMessage("Logged in successfully.");
 };
 
 const handleLogout = async () => {
+  if (session?.user && pushActive) {
+    try {
+      await unsubscribeDevice(supabase, session.user.id);
+      setPushActive(false);
+    } catch (error) {
+      console.error("Error removing this device's push subscription:", error);
+    }
+  }
   const { error } = await supabase.auth.signOut();
 
   if (error) {
@@ -1666,6 +1695,7 @@ const loadNotificationData = async (userId: string) => {
   if (!preferenceResult.error && preferenceResult.data) {
     setNotificationPreferences({
       browserEnabled: Boolean(preferenceResult.data.browser_enabled),
+      pushEnabled: Boolean(preferenceResult.data.push_enabled),
       dueToday: Boolean(preferenceResult.data.due_today),
       dueTomorrow: Boolean(preferenceResult.data.due_tomorrow),
       overdue: Boolean(preferenceResult.data.overdue),
@@ -1728,6 +1758,7 @@ const saveNotificationPreferences = async (next: NotificationPreferences) => {
   const { error } = await supabase.from("notification_preferences").upsert({
     user_id: session.user.id,
     browser_enabled: next.browserEnabled,
+    push_enabled: next.pushEnabled,
     due_today: next.dueToday,
     due_tomorrow: next.dueTomorrow,
     overdue: next.overdue,
@@ -1739,9 +1770,29 @@ const saveNotificationPreferences = async (next: NotificationPreferences) => {
 };
 
 const enableBrowserNotifications = async () => {
-  if (typeof Notification === "undefined" || Notification.permission === "denied") return;
-  const permission = await Notification.requestPermission();
-  await saveNotificationPreferences({ ...notificationPreferences, browserEnabled: permission === "granted" });
+  setPushError("");
+  if (!supportsPushNotifications()) { setPushError("Push notifications are not supported by this browser."); return; }
+  if (!session?.user) { setPushError("Sign in first to receive notifications while Zentaskra is closed."); return; }
+  setPushBusy(true);
+  try {
+    const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+    if (permission !== "granted") { setPushError("Notifications are blocked. Allow them in your browser or device settings."); return; }
+    await subscribeDevice(supabase, session.user.id);
+    setPushActive(true);
+    await saveNotificationPreferences({ ...notificationPreferences, browserEnabled: true, pushEnabled: true });
+  } catch (error) {
+    setPushError(error instanceof Error ? error.message : "Could not enable push notifications.");
+  } finally { setPushBusy(false); }
+};
+
+const disableBrowserNotifications = async () => {
+  if (!session?.user) return;
+  setPushBusy(true); setPushError("");
+  try {
+    await unsubscribeDevice(supabase, session.user.id);
+    setPushActive(false);
+  } catch (error) { setPushError(error instanceof Error ? error.message : "Could not disable notifications."); }
+  finally { setPushBusy(false); }
 };
 
 const updateNotificationState = async (id: string, patch: Partial<{ read: boolean; dismissed: boolean }>) => {
@@ -3919,8 +3970,13 @@ if (authLoading) {
 <NotificationSettings
   preferences={notificationPreferences}
   permission={typeof Notification === "undefined" ? "unsupported" : Notification.permission}
+  signedIn={Boolean(session?.user)}
+  pushActive={pushActive}
+  pushBusy={pushBusy}
+  pushError={pushError}
   onChange={(next) => void saveNotificationPreferences(next)}
   onEnableBrowser={() => void enableBrowserNotifications()}
+  onDisableBrowser={() => void disableBrowserNotifications()}
 />
 
 <div className="rounded-2xl border border-zinc-200 p-5">

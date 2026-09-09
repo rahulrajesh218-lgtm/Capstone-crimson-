@@ -4,8 +4,13 @@ import type { NotificationPreferences } from "../features/notifications/types";
 type Props = {
   preferences: NotificationPreferences;
   permission: NotificationPermission | "unsupported";
+  signedIn: boolean;
+  pushActive: boolean;
+  pushBusy: boolean;
+  pushError: string;
   onChange: (preferences: NotificationPreferences) => void;
   onEnableBrowser: () => void;
+  onDisableBrowser: () => void;
 };
 
 const rows: Array<{ key: keyof Pick<NotificationPreferences, "dueToday" | "dueTomorrow" | "overdue" | "classReminders">; label: string; detail: string }> = [
@@ -15,15 +20,16 @@ const rows: Array<{ key: keyof Pick<NotificationPreferences, "dueToday" | "dueTo
   { key: "classReminders", label: "Class reminders", detail: "Notify 10 minutes before class" },
 ];
 
-export function NotificationSettings({ preferences, permission, onChange, onEnableBrowser }: Props) {
-  const permissionText = permission === "unsupported" ? "Not supported by this browser" : permission === "denied" ? "Blocked in browser settings" : permission === "granted" ? "Enabled on this device" : "Off until you choose to enable it";
+export function NotificationSettings({ preferences, permission, signedIn, pushActive, pushBusy, pushError, onChange, onEnableBrowser, onDisableBrowser }: Props) {
+  const permissionText = permission === "unsupported" ? "Not supported by this browser" : permission === "denied" ? "Blocked in browser settings" : pushActive ? "Background alerts are active on this device" : permission === "granted" ? "Permission granted — finish enabling this device" : "Off until you choose to enable it";
   return (
     <div className="rounded-2xl border border-zinc-200 p-5">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex gap-3"><span className="rounded-xl bg-indigo-100 p-3 text-indigo-700">{permission === "denied" ? <BellOff className="h-6 w-6" /> : <Bell className="h-6 w-6" />}</span><div><h3 className="text-2xl font-semibold">Notifications</h3><p className="mt-1 text-zinc-500">In-app alerts always work while Zentaskra is open.</p></div></div>
-        <button onClick={onEnableBrowser} disabled={permission === "unsupported" || permission === "denied" || permission === "granted"} className="min-h-11 rounded-xl bg-indigo-600 px-4 font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-500">{permission === "granted" ? "Browser alerts enabled" : "Enable browser alerts"}</button>
+        <button onClick={pushActive ? onDisableBrowser : onEnableBrowser} disabled={pushBusy || permission === "unsupported" || permission === "denied"} className="min-h-11 rounded-xl bg-indigo-600 px-4 font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-500">{pushBusy ? "Updating…" : pushActive ? "Turn off on this device" : "Enable on this device"}</button>
       </div>
-      <p className="mt-3 text-sm text-zinc-500">{permissionText}. Browser alerts currently require the app to be open; true background push is not enabled.</p>
+      <p className="mt-3 text-sm text-zinc-500">{permissionText}. {signedIn ? "Zentaskra can send alerts when the app is closed. Enable each phone or computer separately." : "Sign in to receive alerts when Zentaskra is closed; guest alerts work while the app is open."}</p>
+      {pushError && <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{pushError}</p>}
       <div className="mt-5 divide-y divide-zinc-200">
         {rows.map((row) => (
           <label key={row.key} className="flex min-h-16 cursor-pointer items-center justify-between gap-4 py-3">

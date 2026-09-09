@@ -16,6 +16,7 @@ export type AppNotification = {
 
 export type NotificationPreferences = {
   browserEnabled: boolean;
+  pushEnabled: boolean;
   dueToday: boolean;
   dueTomorrow: boolean;
   overdue: boolean;
@@ -25,6 +26,7 @@ export type NotificationPreferences = {
 
 export const defaultNotificationPreferences: NotificationPreferences = {
   browserEnabled: false,
+  pushEnabled: false,
   dueToday: true,
   dueTomorrow: true,
   overdue: true,
