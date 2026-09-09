@@ -55,6 +55,7 @@ type Priority = "high" | "medium" | "low";
 type Tab = "dashboard" | "tasks" | "schedule" | "chat" | "planner" | "grades" | "leaderboard" | "settings";
 type Theme = "light" | "dark" | "forest" | "sunset" | "ocean" | "lavender" | "midnight" | "rose" | "slate";
 type BackgroundPattern = "none" | "dots" | "grid" | "diagonal" | "contours" | "notebook";
+type PatternColor = "match" | "indigo" | "blue" | "emerald" | "rose" | "amber" | "neutral";
 
 const backgroundPatterns: Array<{ id: BackgroundPattern; name: string; description: string }> = [
   { id: "none", name: "Clean", description: "No background pattern" },
@@ -63,6 +64,16 @@ const backgroundPatterns: Array<{ id: BackgroundPattern; name: string; descripti
   { id: "diagonal", name: "Diagonal", description: "Fine directional lines" },
   { id: "contours", name: "Contours", description: "Soft topographic rings" },
   { id: "notebook", name: "Notebook", description: "Subtle ruled paper" },
+];
+
+const patternColors: Array<{ id: PatternColor; name: string; color?: string }> = [
+  { id: "match", name: "Match theme" },
+  { id: "indigo", name: "Indigo", color: "#6366f1" },
+  { id: "blue", name: "Blue", color: "#0ea5e9" },
+  { id: "emerald", name: "Emerald", color: "#10b981" },
+  { id: "rose", name: "Rose", color: "#f43f5e" },
+  { id: "amber", name: "Amber", color: "#f59e0b" },
+  { id: "neutral", name: "Neutral", color: "#64748b" },
 ];
 
 const daisyThemeNames: Record<Theme, string> = {
@@ -297,6 +308,7 @@ const STORAGE_KEYS = {
   studyPlanFlow: "zentaskra_study_plan_flow_v2",
   theme: "zentaskra_theme_v1",
   backgroundPattern: "zentaskra_background_pattern_v1",
+  patternColor: "zentaskra_pattern_color_v1",
   grades: "zentaskra_grades_v1",
   categories: "zentaskra_categories_v1",
   schedule: "zentaskra_schedule_v1",
@@ -1020,6 +1032,9 @@ const [theme, setTheme] = useState<Theme>(
 const [backgroundPattern, setBackgroundPattern] = useState<BackgroundPattern>(
   () => readStorage(STORAGE_KEYS.backgroundPattern, "none")
 );
+const [patternColor, setPatternColor] = useState<PatternColor>(
+  () => readStorage(STORAGE_KEYS.patternColor, "match")
+);
 
 const [courses, setCourses] = useState<GradeCourse[]>(
   () => readStorage(STORAGE_KEYS.grades, [] as GradeCourse[])
@@ -1188,6 +1203,10 @@ useEffect(() => {
 useEffect(() => {
   window.localStorage.setItem(STORAGE_KEYS.backgroundPattern, JSON.stringify(backgroundPattern));
 }, [backgroundPattern]);
+
+useEffect(() => {
+  window.localStorage.setItem(STORAGE_KEYS.patternColor, JSON.stringify(patternColor));
+}, [patternColor]);
 
 useEffect(() => {
   window.localStorage.setItem(STORAGE_KEYS.grades, JSON.stringify(courses));
@@ -2759,7 +2778,7 @@ if (authLoading) {
 }
 
   return (
-<div className={cn(themeClasses.page, `pattern-${backgroundPattern}`)} data-theme={daisyThemeNames[theme]}>
+<div className={cn(themeClasses.page, `pattern-${backgroundPattern}`, `pattern-color-${patternColor}`)} data-theme={daisyThemeNames[theme]}>
       <style>{`
         .zentaskra-dark .bg-white { background-color: var(--zt-dark-card) !important; }
         .zentaskra-dark .bg-zinc-50 { background-color: var(--zt-dark-subtle) !important; }
@@ -4025,6 +4044,32 @@ if (authLoading) {
         </button>
       );
     })}
+  </div>
+  <div className="mt-5">
+    <p className="text-sm font-semibold text-zinc-700">Pattern color</p>
+    <div className="mt-2 flex flex-wrap gap-2">
+      {patternColors.map((colorOption) => {
+        const isSelected = patternColor === colorOption.id;
+        return (
+          <button
+            key={colorOption.id}
+            onClick={() => setPatternColor(colorOption.id)}
+            aria-pressed={isSelected}
+            className={cn(
+              "flex min-h-11 items-center gap-2 rounded-xl border bg-white px-3 text-sm font-semibold text-zinc-800 shadow-sm transition",
+              isSelected ? "border-indigo-500 ring-2 ring-indigo-500/20" : "border-zinc-200 hover:border-zinc-300"
+            )}
+          >
+            <span
+              className="h-5 w-5 rounded-full border border-black/10 shadow-sm"
+              style={{ background: colorOption.color ?? "linear-gradient(135deg, var(--color-primary), var(--color-secondary))" }}
+              aria-hidden="true"
+            />
+            {colorOption.name}
+          </button>
+        );
+      })}
+    </div>
   </div>
 </div>
 </div>

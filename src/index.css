@@ -85,11 +85,18 @@ textarea:focus {
 }
 
 .pattern-none { --zt-pattern-image: linear-gradient(transparent, transparent); --zt-pattern-size: auto; }
-.pattern-dots { --zt-pattern-image: radial-gradient(circle, color-mix(in oklab, var(--color-primary) 18%, transparent) 1.1px, transparent 1.4px); --zt-pattern-size: 22px 22px; }
-.pattern-grid { --zt-pattern-image: linear-gradient(color-mix(in oklab, var(--color-primary) 8%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in oklab, var(--color-primary) 8%, transparent) 1px, transparent 1px); --zt-pattern-size: 30px 30px, 30px 30px; }
-.pattern-diagonal { --zt-pattern-image: repeating-linear-gradient(135deg, transparent 0 14px, color-mix(in oklab, var(--color-primary) 7%, transparent) 14px 15px); --zt-pattern-size: 30px 30px; }
-.pattern-contours { --zt-pattern-image: repeating-radial-gradient(ellipse at 15% 20%, transparent 0 25px, color-mix(in oklab, var(--color-primary) 7%, transparent) 26px 27px, transparent 28px 45px); --zt-pattern-size: 210px 155px; }
-.pattern-notebook { --zt-pattern-image: repeating-linear-gradient(to bottom, transparent 0 31px, color-mix(in oklab, var(--color-primary) 8%, transparent) 31px 32px); --zt-pattern-size: 100% 32px; }
+.pattern-color-match { --zt-pattern-color: var(--color-primary); }
+.pattern-color-indigo { --zt-pattern-color: #6366f1; }
+.pattern-color-blue { --zt-pattern-color: #0ea5e9; }
+.pattern-color-emerald { --zt-pattern-color: #10b981; }
+.pattern-color-rose { --zt-pattern-color: #f43f5e; }
+.pattern-color-amber { --zt-pattern-color: #f59e0b; }
+.pattern-color-neutral { --zt-pattern-color: #64748b; }
+.pattern-dots { --zt-pattern-image: radial-gradient(circle, color-mix(in oklab, var(--zt-pattern-color) 18%, transparent) 1.1px, transparent 1.4px); --zt-pattern-size: 22px 22px; }
+.pattern-grid { --zt-pattern-image: linear-gradient(color-mix(in oklab, var(--zt-pattern-color) 8%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in oklab, var(--zt-pattern-color) 8%, transparent) 1px, transparent 1px); --zt-pattern-size: 30px 30px, 30px 30px; }
+.pattern-diagonal { --zt-pattern-image: repeating-linear-gradient(135deg, transparent 0 14px, color-mix(in oklab, var(--zt-pattern-color) 7%, transparent) 14px 15px); --zt-pattern-size: 30px 30px; }
+.pattern-contours { --zt-pattern-image: repeating-radial-gradient(ellipse at 15% 20%, transparent 0 25px, color-mix(in oklab, var(--zt-pattern-color) 7%, transparent) 26px 27px, transparent 28px 45px); --zt-pattern-size: 210px 155px; }
+.pattern-notebook { --zt-pattern-image: repeating-linear-gradient(to bottom, transparent 0 31px, color-mix(in oklab, var(--zt-pattern-color) 8%, transparent) 31px 32px); --zt-pattern-size: 100% 32px; }
 
 .zentaskra-theme .desktop-app-main {
   background-image: var(--zt-pattern-image);
