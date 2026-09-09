@@ -55,6 +55,18 @@ type Priority = "high" | "medium" | "low";
 type Tab = "dashboard" | "tasks" | "schedule" | "chat" | "planner" | "grades" | "leaderboard" | "settings";
 type Theme = "light" | "dark" | "forest" | "sunset" | "ocean" | "lavender" | "midnight" | "rose" | "slate";
 
+const daisyThemeNames: Record<Theme, string> = {
+  light: "corporate",
+  dark: "business",
+  forest: "emerald",
+  sunset: "autumn",
+  ocean: "nord",
+  lavender: "pastel",
+  midnight: "night",
+  rose: "valentine",
+  slate: "silk",
+};
+
 const themeDesigns: Record<Theme, {
   name: string;
   description: string;
@@ -67,7 +79,7 @@ const themeDesigns: Record<Theme, {
   light: {
     name: "Studio",
     description: "Bright, calm, and focused",
-    page: "zentaskra-theme zentaskra-light bg-[radial-gradient(circle_at_top_left,_#e8ecff_0,_#f8fafc_42%,_#f1f3f8_100%)] text-zinc-950",
+    page: "zentaskra-theme zentaskra-light text-zinc-950",
     card: "border-white/80 bg-white/90 shadow-[0_12px_35px_rgba(15,23,42,0.06)] backdrop-blur-sm",
     primary: "bg-indigo-600 text-white shadow-sm hover:bg-indigo-700",
     badge: "border border-indigo-100 bg-indigo-50 text-indigo-700",
@@ -76,7 +88,7 @@ const themeDesigns: Record<Theme, {
   dark: {
     name: "Graphite",
     description: "Clean contrast for late nights",
-    page: "zentaskra-theme zentaskra-dark bg-[radial-gradient(circle_at_top_left,_#1b2335_0,_#0c111d_46%,_#070a11_100%)] text-zinc-100",
+    page: "zentaskra-theme zentaskra-dark text-zinc-100",
     card: "border-white/10 bg-[#111827]/90 shadow-[0_14px_40px_rgba(0,0,0,0.24)] backdrop-blur-sm",
     primary: "bg-indigo-500 text-white shadow-sm hover:bg-indigo-400",
     badge: "border border-white/10 bg-white/10 text-zinc-100",
@@ -85,7 +97,7 @@ const themeDesigns: Record<Theme, {
   forest: {
     name: "Evergreen",
     description: "Grounded greens and soft neutrals",
-    page: "zentaskra-theme zentaskra-forest bg-[radial-gradient(circle_at_top_left,_#d8eee5_0,_#f4f8f5_44%,_#eef3f1_100%)] text-emerald-950",
+    page: "zentaskra-theme zentaskra-forest text-emerald-950",
     card: "border-emerald-100/80 bg-white/88 shadow-[0_12px_34px_rgba(6,78,59,0.08)] backdrop-blur-sm",
     primary: "bg-emerald-700 text-white shadow-sm hover:bg-emerald-800",
     badge: "border border-emerald-200 bg-emerald-50 text-emerald-800",
@@ -94,7 +106,7 @@ const themeDesigns: Record<Theme, {
   sunset: {
     name: "Sienna",
     description: "Warm, energetic, and refined",
-    page: "zentaskra-theme zentaskra-sunset bg-[radial-gradient(circle_at_top_left,_#f8dfce_0,_#fbf5ef_44%,_#f4f1ee_100%)] text-stone-950",
+    page: "zentaskra-theme zentaskra-sunset text-stone-950",
     card: "border-orange-100 bg-white/88 shadow-[0_12px_34px_rgba(154,52,18,0.08)] backdrop-blur-sm",
     primary: "bg-orange-600 text-white shadow-sm hover:bg-orange-700",
     badge: "border border-orange-200 bg-orange-50 text-orange-800",
@@ -103,7 +115,7 @@ const themeDesigns: Record<Theme, {
   ocean: {
     name: "Coastal",
     description: "Clear blues with an airy finish",
-    page: "zentaskra-theme zentaskra-ocean bg-[radial-gradient(circle_at_top_left,_#d5edf5_0,_#f1f8fa_44%,_#edf3f6_100%)] text-slate-950",
+    page: "zentaskra-theme zentaskra-ocean text-slate-950",
     card: "border-cyan-100 bg-white/88 shadow-[0_12px_34px_rgba(14,116,144,0.08)] backdrop-blur-sm",
     primary: "bg-cyan-700 text-white shadow-sm hover:bg-cyan-800",
     badge: "border border-cyan-200 bg-cyan-50 text-cyan-800",
@@ -112,7 +124,7 @@ const themeDesigns: Record<Theme, {
   lavender: {
     name: "Lavender",
     description: "Soft violet with crisp details",
-    page: "zentaskra-theme zentaskra-lavender bg-[radial-gradient(circle_at_top_left,_#e7e1f5_0,_#f7f4fa_44%,_#f1eff5_100%)] text-violet-950",
+    page: "zentaskra-theme zentaskra-lavender text-violet-950",
     card: "border-violet-100 bg-white/88 shadow-[0_12px_34px_rgba(91,33,182,0.08)] backdrop-blur-sm",
     primary: "bg-violet-700 text-white shadow-sm hover:bg-violet-800",
     badge: "border border-violet-200 bg-violet-50 text-violet-800",
@@ -121,7 +133,7 @@ const themeDesigns: Record<Theme, {
   midnight: {
     name: "Midnight",
     description: "Deep indigo with a vivid accent",
-    page: "zentaskra-theme zentaskra-dark zentaskra-midnight bg-[radial-gradient(circle_at_top_left,_#282657_0,_#10122d_44%,_#060713_100%)] text-indigo-50",
+    page: "zentaskra-theme zentaskra-dark zentaskra-midnight text-indigo-50",
     card: "border-indigo-400/15 bg-indigo-950/72 shadow-[0_14px_40px_rgba(0,0,0,0.3)] backdrop-blur-md",
     primary: "bg-violet-500 text-white shadow-sm hover:bg-violet-400",
     badge: "border border-indigo-300/15 bg-indigo-300/10 text-indigo-100",
@@ -130,7 +142,7 @@ const themeDesigns: Record<Theme, {
   rose: {
     name: "Rosewood",
     description: "Warm rose without the noise",
-    page: "zentaskra-theme zentaskra-rose bg-[radial-gradient(circle_at_top_left,_#f5dfe4_0,_#fbf4f5_44%,_#f4eff1_100%)] text-rose-950",
+    page: "zentaskra-theme zentaskra-rose text-rose-950",
     card: "border-rose-100 bg-white/88 shadow-[0_12px_34px_rgba(159,18,57,0.08)] backdrop-blur-sm",
     primary: "bg-rose-600 text-white shadow-sm hover:bg-rose-700",
     badge: "border border-rose-200 bg-rose-50 text-rose-800",
@@ -139,7 +151,7 @@ const themeDesigns: Record<Theme, {
   slate: {
     name: "Executive",
     description: "Neutral, polished, and understated",
-    page: "zentaskra-theme zentaskra-slate bg-[radial-gradient(circle_at_top_left,_#dce3ea_0,_#f3f5f7_44%,_#eceff2_100%)] text-slate-950",
+    page: "zentaskra-theme zentaskra-slate text-slate-950",
     card: "border-slate-200/80 bg-white/90 shadow-[0_12px_34px_rgba(15,23,42,0.07)] backdrop-blur-sm",
     primary: "bg-slate-800 text-white shadow-sm hover:bg-slate-900",
     badge: "border border-slate-200 bg-slate-100 text-slate-700",
@@ -2729,7 +2741,7 @@ if (authLoading) {
 }
 
   return (
-<div className={themeClasses.page} data-theme={theme}>
+<div className={themeClasses.page} data-theme={daisyThemeNames[theme]}>
       <style>{`
         .zentaskra-dark .bg-white { background-color: var(--zt-dark-card) !important; }
         .zentaskra-dark .bg-zinc-50 { background-color: var(--zt-dark-subtle) !important; }
@@ -3944,6 +3956,7 @@ if (authLoading) {
                           return (
                           <button
                             key={themeOption}
+                            data-theme={daisyThemeNames[themeOption]}
                             onClick={() => setTheme(themeOption)}
                             aria-pressed={isSelected}
                             className={cn(
@@ -3953,11 +3966,11 @@ if (authLoading) {
                           >
                             <span className="mb-5 flex items-center justify-between">
                               <span className="flex gap-1.5" aria-hidden="true">
-                                {design.swatches.map((swatch) => (
+                                {design.swatches.map((swatch, swatchIndex) => (
                                   <span
                                     key={swatch}
                                     className="h-7 w-7 rounded-full border border-black/10 shadow-sm"
-                                    style={{ backgroundColor: swatch }}
+                                    style={{ backgroundColor: ["var(--color-primary)", "var(--color-secondary)", "var(--color-base-200)"][swatchIndex] }}
                                   />
                                 ))}
                               </span>

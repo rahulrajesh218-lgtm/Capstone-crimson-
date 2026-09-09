@@ -1,4 +1,13 @@
 @import "tailwindcss";
+@import "daisyui/theme/corporate.css";
+@import "daisyui/theme/business.css";
+@import "daisyui/theme/emerald.css";
+@import "daisyui/theme/autumn.css";
+@import "daisyui/theme/nord.css";
+@import "daisyui/theme/pastel.css";
+@import "daisyui/theme/night.css";
+@import "daisyui/theme/valentine.css";
+@import "daisyui/theme/silk.css";
 
 html,
 body,
@@ -59,27 +68,19 @@ textarea:focus {
 /* Theme foundations: accent utilities throughout the existing UI inherit the
    selected palette while semantic success/warning/error colors stay intact. */
 .zentaskra-theme {
-  --zt-accent: #4f46e5;
-  --zt-accent-hover: #4338ca;
-  --zt-accent-2: #7c3aed;
-  --zt-accent-soft: #eef2ff;
-  --zt-accent-muted: #c7d2fe;
-  --zt-accent-ink: #3730a3;
-  --zt-focus: rgba(79, 70, 229, 0.16);
-  --zt-banner-text: #e0e7ff;
-  --zt-dark-card: #111827;
-  --zt-dark-canvas: #0b1020;
-  --zt-dark-subtle: #0f172a;
+  --zt-accent: var(--color-primary);
+  --zt-accent-hover: color-mix(in oklab, var(--color-primary) 84%, black);
+  --zt-accent-2: var(--color-secondary);
+  --zt-accent-soft: color-mix(in oklab, var(--color-primary) 10%, var(--color-base-100));
+  --zt-accent-muted: color-mix(in oklab, var(--color-primary) 30%, var(--color-base-100));
+  --zt-accent-ink: color-mix(in oklab, var(--color-primary) 82%, black);
+  --zt-focus: color-mix(in oklab, var(--color-primary) 20%, transparent);
+  --zt-banner-text: var(--color-primary-content);
+  --zt-dark-card: var(--color-base-200);
+  --zt-dark-canvas: var(--color-base-300);
+  --zt-dark-subtle: color-mix(in oklab, var(--color-base-200) 72%, var(--color-base-300));
+  background: radial-gradient(circle at top left, color-mix(in oklab, var(--color-primary) 14%, var(--color-base-100)) 0%, var(--color-base-100) 44%, var(--color-base-200) 100%);
 }
-
-.zentaskra-forest { --zt-accent: #087f5b; --zt-accent-hover: #066a4b; --zt-accent-2: #0f9f72; --zt-accent-soft: #e7f6ef; --zt-accent-muted: #a8dfc8; --zt-accent-ink: #086047; --zt-focus: rgba(8,127,91,.16); --zt-banner-text: #d9f8ea; }
-.zentaskra-sunset { --zt-accent: #c65325; --zt-accent-hover: #a9411d; --zt-accent-2: #e07a36; --zt-accent-soft: #fff0e7; --zt-accent-muted: #f4c5aa; --zt-accent-ink: #963b1c; --zt-focus: rgba(198,83,37,.16); --zt-banner-text: #ffeadc; }
-.zentaskra-ocean { --zt-accent: #087da1; --zt-accent-hover: #066783; --zt-accent-2: #159cc0; --zt-accent-soft: #e7f5f9; --zt-accent-muted: #a9dae8; --zt-accent-ink: #075f7a; --zt-focus: rgba(8,125,161,.16); --zt-banner-text: #d9f5fc; }
-.zentaskra-lavender { --zt-accent: #7552b8; --zt-accent-hover: #62429d; --zt-accent-2: #9b6bd1; --zt-accent-soft: #f1ebf8; --zt-accent-muted: #d6c4e9; --zt-accent-ink: #59398d; --zt-focus: rgba(117,82,184,.16); --zt-banner-text: #f0e8fb; }
-.zentaskra-rose { --zt-accent: #bd4565; --zt-accent-hover: #a33655; --zt-accent-2: #d86a83; --zt-accent-soft: #faeaf0; --zt-accent-muted: #edbdca; --zt-accent-ink: #91324d; --zt-focus: rgba(189,69,101,.16); --zt-banner-text: #fde8ee; }
-.zentaskra-slate { --zt-accent: #475569; --zt-accent-hover: #334155; --zt-accent-2: #64748b; --zt-accent-soft: #eef1f4; --zt-accent-muted: #cbd5e1; --zt-accent-ink: #334155; --zt-focus: rgba(71,85,105,.16); --zt-banner-text: #edf2f7; }
-.zentaskra-dark { --zt-accent: #818cf8; --zt-accent-hover: #a5b4fc; --zt-accent-2: #6366f1; --zt-accent-soft: rgba(99,102,241,.14); --zt-accent-muted: #373a72; --zt-accent-ink: #c7d2fe; --zt-focus: rgba(129,140,248,.2); --zt-banner-text: #e0e7ff; }
-.zentaskra-midnight { --zt-accent: #a78bfa; --zt-accent-hover: #c4b5fd; --zt-accent-2: #7c3aed; --zt-accent-soft: rgba(139,92,246,.15); --zt-accent-muted: #493b76; --zt-accent-ink: #ddd6fe; --zt-focus: rgba(167,139,250,.22); --zt-banner-text: #ede9fe; --zt-dark-card: #14152f; --zt-dark-canvas: #0b0c22; --zt-dark-subtle: #10112a; }
 
 .zentaskra-theme input:focus,
 .zentaskra-theme select:focus,
